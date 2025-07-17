@@ -1,0 +1,21 @@
+{
+  "name": "stablend-scripts",
+  "version": "1.0.0",
+  "description": "Off-chain scripts for Stablend DeFi platform",
+  "main": "index.js",
+  "scripts": {
+    "update-rates": "ts-node scripts/updateRates.ts",
+    "fetch-data": "ts-node scripts/fetchMarketData.ts",
+    "update-scores": "ts-node scripts/updateCreditScores.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ethers": "^6.11.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30"
+  },
+  "packageManager": "yarn@4.0.0"
+} 

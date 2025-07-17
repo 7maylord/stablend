@@ -1,0 +1,7 @@
+[
+  {"utilization": 75, "credit_score": 700, "mnt_price": 1.2, "rate": 800},
+  {"utilization": 50, "credit_score": 500, "mnt_price": 1.0, "rate": 1200},
+  {"utilization": 90, "credit_score": 800, "mnt_price": 1.5, "rate": 600},
+  {"utilization": 30, "credit_score": 400, "mnt_price": 0.8, "rate": 1500},
+  {"utilization": 60, "credit_score": 600, "mnt_price": 1.3, "rate": 900}
+]

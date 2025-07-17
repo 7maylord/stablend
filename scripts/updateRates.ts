@@ -1,10 +1,12 @@
 import { ethers, Contract, Wallet, JsonRpcProvider } from "ethers";
 import * as dotenv from "dotenv";
+import { execSync } from "child_process";
+import * as path from "path";
 
 dotenv.config();
 
-// Mantle testnet provider and wallet
-const provider: JsonRpcProvider = new ethers.JsonRpcProvider(process.env.MANTLE_TESTNET_RPC);
+// Mantle Sepolia testnet provider and wallet
+const provider: JsonRpcProvider = new ethers.JsonRpcProvider(process.env.MANTLE_SEPOLIA_RPC);
 const wallet: Wallet = new ethers.Wallet(process.env.PRIVATE_KEY!, provider);
 
 // RateAdjuster contract ABI
@@ -13,50 +15,54 @@ const rateAdjusterAbi: string[] = [
   "function getUserRate(address user) view returns (uint256)"
 ];
 
-// CreditScore contract ABI
-const creditScoreAbi: string[] = [
-  "function getCreditScore(address user) view returns (uint256)"
-];
+// Contract addresses
+const RATE_ADJUSTER_ADDRESS: string = process.env.RATE_ADJUSTER_ADDRESS!;
 
-// Contract addresses (set after deployment via Deploy.s.sol)
-const RATE_ADJUSTER_ADDRESS: string = "0xYourRateAdjusterAddress";
-const CREDIT_SCORE_ADDRESS: string = "0xYourCreditScoreAddress";
-
-const rateAdjuster: Contract = new ethers.Contract(RATE_ADJUSTER_ADDRESS, rateAdjusterAbi, wallet);
-const creditScore: Contract = new ethers.Contract(CREDIT_SCORE_ADDRESS, creditScoreAbi, wallet);
-
-// Mock AI model: Generates rate based on market data and credit score
-async function generateMockRate(user: string): Promise<number> {
-  // Mock market data (pool utilization 0-100%)
-  const poolUtilization: number = Math.floor(Math.random() * 100);
-  const baseRate: number = 500; // 5% in basis points
-
-  // Fetch user's credit score
-  const creditScore: bigint = await creditScore.getCreditScore(user);
-
-  // Simplified AI logic: Adjust rate based on utilization and score
-  let rateAdjustment: number = poolUtilization * 10; // Higher utilization = higher rate
-  rateAdjustment = Math.min(rateAdjustment, 2000); // Cap adjustment at 20%
-  const userRate: number = baseRate + (rateAdjustment * (1000 - Number(creditScore))) / 1000;
-
-  return Math.floor(userRate);
+// Mock Chainlink Functions with admin wallet
+async function callChainlinkFunctions(user: string, rate: number): Promise<void> {
+  try {
+    const rateAdjuster: Contract = new ethers.Contract(RATE_ADJUSTER_ADDRESS, rateAdjusterAbi, wallet);
+    const tx = await rateAdjuster.updateUserRate(user, rate);
+    await tx.wait();
+    console.log(`Mock Chainlink Functions: Updated rate for ${user} to ${rate} basis points`);
+  } catch (error) {
+    console.error("Error calling Chainlink Functions:", error);
+    throw error;
+  }
 }
 
-// Main function to update rates for a user
+// Get AI-predicted rate using virtual environment
+async function getAIPredictedRate(user: string): Promise<number> {
+  try {
+    // Call fetchMarketData.ts
+    const data = execSync(`ts-node scripts/fetchMarketData.ts ${user}`, { encoding: "utf-8" });
+    const marketData = JSON.parse(data);
+    
+    // Get the path to the AI directory
+    const aiDir = path.join(__dirname, '../off-chain/ai');
+    
+    // Run rateModel.py with virtual environment
+    const rate = execSync(`cd ${aiDir} && ./run_model.sh '${JSON.stringify(marketData)}'`, { encoding: "utf-8" });
+    return parseInt(rate);
+  } catch (error) {
+    console.error("Error getting AI rate:", error);
+    return 500; // Fallback 5% rate
+  }
+}
+
+// Main function
 async function updateRates(userAddress: string): Promise<void> {
   try {
     console.log(`Updating rate for user: ${userAddress}`);
-
-    // Generate mock rate
-    const newRate: number = await generateMockRate(userAddress);
-
-    // Call updateUserRate on RateAdjuster.sol
-    const tx = await rateAdjuster.updateUserRate(userAddress, newRate);
-    await tx.wait();
-
-    console.log(`Updated rate for ${userAddress} to ${newRate} basis points`);
-
+    
+    // Get AI-predicted rate
+    const newRate: number = await getAIPredictedRate(userAddress);
+    
+    // Call Chainlink Functions (mocked)
+    await callChainlinkFunctions(userAddress, newRate);
+    
     // Verify update
+    const rateAdjuster: Contract = new ethers.Contract(RATE_ADJUSTER_ADDRESS, rateAdjusterAbi, provider);
     const updatedRate: bigint = await rateAdjuster.getUserRate(userAddress);
     console.log(`Verified rate: ${updatedRate} basis points`);
   } catch (error) {

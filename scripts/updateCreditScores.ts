@@ -7,37 +7,55 @@ dotenv.config();
 const provider: JsonRpcProvider = new ethers.JsonRpcProvider(process.env.MANTLE_TESTNET_RPC);
 const wallet: Wallet = new ethers.Wallet(process.env.PRIVATE_KEY!, provider);
 
-// CreditScore contract ABI
+// CreditScore and LendingMarket contract ABIs
 const creditScoreAbi: string[] = [
   "function updateCreditScore(address user, uint256 transactionCount) external",
   "function getCreditScore(address user) view returns (uint256)"
 ];
+const lendingMarketAbi: string[] = [
+  "event Repay(address indexed user, uint256 amount)"
+];
 
-// Contract address (set after deployment via Deploy.s.sol)
-const CREDIT_SCORE_ADDRESS: string = "0xYourCreditScoreAddress";
+// Contract addresses
+const CREDIT_SCORE_ADDRESS: string = process.env.CREDIT_SCORE_ADDRESS!;
+const LENDING_MARKET_ADDRESS: string = process.env.LENDING_MARKET_ADDRESS!;
 
 const creditScore: Contract = new ethers.Contract(CREDIT_SCORE_ADDRESS, creditScoreAbi, wallet);
+const lendingMarket: Contract = new ethers.Contract(LENDING_MARKET_ADDRESS, lendingMarketAbi, provider);
 
-// Mock function to fetch user transaction count
+// Fetch transaction count and repayment data
 async function getTransactionCount(user: string): Promise<number> {
-  // For MVP, use random count; in production, query Mantle RPC
-  return Math.floor(Math.random() * 100); // Mock 0-100 transactions
+  try {
+    // Get transaction count from Mantle RPC
+    const txCount: number = await provider.getTransactionCount(user);
+    
+    // Count repayment events from LendingMarket.sol
+    const filter = lendingMarket.filters.Repay(user);
+    const events = await lendingMarket.queryFilter(filter, -1000); // Last 1000 blocks
+    const repayCount: number = events.length;
+    
+    // Combine for score (max 100)
+    return Math.min(txCount + repayCount * 10, 100);
+  } catch (error) {
+    console.error("Error fetching transaction count:", error);
+    return 0;
+  }
 }
 
-// Main function to update credit score for a user
+// Main function to update credit score
 async function updateCreditScores(userAddress: string): Promise<void> {
   try {
     console.log(`Updating credit score for user: ${userAddress}`);
-
-    // Fetch mock transaction count
+    
+    // Fetch transaction count
     const transactionCount: number = await getTransactionCount(userAddress);
-
+    
     // Call updateCreditScore on CreditScore.sol
     const tx = await creditScore.updateCreditScore(userAddress, transactionCount);
     await tx.wait();
-
+    
     console.log(`Updated credit score for ${userAddress} with ${transactionCount} transactions`);
-
+    
     // Verify update
     const updatedScore: bigint = await creditScore.getCreditScore(userAddress);
     console.log(`Verified credit score: ${updatedScore}`);
@@ -49,4 +67,3 @@ async function updateCreditScores(userAddress: string): Promise<void> {
 // Example usage
 const sampleUser: string = "0xSampleUserAddress";
 updateCreditScores(sampleUser).catch(console.error);
-

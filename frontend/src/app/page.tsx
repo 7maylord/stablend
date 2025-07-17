@@ -1,95 +1,134 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+'use client';
+
+import { useState } from 'react';
+import styles from './page.module.css';
 
 export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>src/app/page.tsx</code>.
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [activeTab, setActiveTab] = useState('lend');
+  const [amount, setAmount] = useState('');
+  const [collateral, setCollateral] = useState('');
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
+  return (
+    <div className={styles.container}>
+      {/* Header */}
+      <header className={styles.header}>
+        <div className={styles.logo}>
+          <h1>Stablend</h1>
+          <p>DeFi Lending on Mantle</p>
+        </div>
+        <div className={styles.walletSection}>
+          <button className={styles.connectButton}>
+            Connect Wallet
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className={styles.main}>
+        <div className={styles.statsGrid}>
+          <div className={styles.statCard}>
+            <h3>Total Value Locked</h3>
+            <p className={styles.statValue}>$0</p>
+          </div>
+          <div className={styles.statCard}>
+            <h3>Total Borrowed</h3>
+            <p className={styles.statValue}>$0</p>
+          </div>
+          <div className={styles.statCard}>
+            <h3>APY (Lending)</h3>
+            <p className={styles.statValue}>5.0%</p>
+          </div>
+          <div className={styles.statCard}>
+            <h3>APY (Borrowing)</h3>
+            <p className={styles.statValue}>7.5%</p>
+          </div>
+        </div>
+
+        {/* Lending/Borrowing Interface */}
+        <div className={styles.interface}>
+          <div className={styles.tabContainer}>
+            <button 
+              className={`${styles.tab} ${activeTab === 'lend' ? styles.active : ''}`}
+              onClick={() => setActiveTab('lend')}
+            >
+              Lend
+            </button>
+            <button 
+              className={`${styles.tab} ${activeTab === 'borrow' ? styles.active : ''}`}
+              onClick={() => setActiveTab('borrow')}
+            >
+              Borrow
+            </button>
+          </div>
+
+          <div className={styles.formContainer}>
+            {activeTab === 'lend' ? (
+              <div className={styles.form}>
+                <h2>Lend USDC</h2>
+                <div className={styles.inputGroup}>
+                  <label>Amount (USDC)</label>
+                  <input
+                    type="number"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.00"
+                    className={styles.input}
+                  />
+                </div>
+                <button className={styles.actionButton}>
+                  Deposit USDC
+                </button>
+              </div>
+            ) : (
+              <div className={styles.form}>
+                <h2>Borrow USDC</h2>
+                <div className={styles.inputGroup}>
+                  <label>Amount to Borrow (USDC)</label>
+                  <input
+                    type="number"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.00"
+                    className={styles.input}
+                  />
+                </div>
+                <div className={styles.inputGroup}>
+                  <label>Collateral (MNT)</label>
+                  <input
+                    type="number"
+                    value={collateral}
+                    onChange={(e) => setCollateral(e.target.value)}
+                    placeholder="0.00"
+                    className={styles.input}
+                  />
+                </div>
+                <button className={styles.actionButton}>
+                  Borrow USDC
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Market Data */}
+        <div className={styles.marketData}>
+          <h2>Market Data</h2>
+          <div className={styles.dataGrid}>
+            <div className={styles.dataItem}>
+              <span>MNT Price:</span>
+              <span>$1.20</span>
+            </div>
+            <div className={styles.dataItem}>
+              <span>Pool Utilization:</span>
+              <span>0%</span>
+            </div>
+            <div className={styles.dataItem}>
+              <span>Your Credit Score:</span>
+              <span>500</span>
+            </div>
+          </div>
         </div>
       </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
   );
 }
