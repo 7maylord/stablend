@@ -2,6 +2,7 @@ import { ethers, Contract, Wallet, JsonRpcProvider } from "ethers";
 import * as dotenv from "dotenv";
 import { execSync } from "child_process";
 import * as path from "path";
+import { fetchMarketData } from "./fetchMarketData";
 
 dotenv.config();
 
@@ -34,18 +35,26 @@ async function callChainlinkFunctions(user: string, rate: number): Promise<void>
 // Get AI-predicted rate using virtual environment
 async function getAIPredictedRate(user: string): Promise<number> {
   try {
-    // Call fetchMarketData.ts
-    const data = execSync(`ts-node scripts/fetchMarketData.ts ${user}`, { encoding: "utf-8" });
-    const marketData = JSON.parse(data);
+    // Get market data directly
+    const marketData = await fetchMarketData(user);
     
     // Get the path to the AI directory
-    const aiDir = path.join(__dirname, '../off-chain/ai');
+    const aiDir = path.join(__dirname, '../../off-chain/ai');
     
     // Run rateModel.py with virtual environment
     const rate = execSync(`cd ${aiDir} && ./run_model.sh '${JSON.stringify(marketData)}'`, { encoding: "utf-8" });
-    return parseInt(rate);
+    const parsedRate = parseInt(rate);
+    
+    // Validate the rate is a valid number
+    if (isNaN(parsedRate) || parsedRate <= 0) {
+      console.log("AI model returned invalid rate, using fallback");
+      return 500; // Fallback 5% rate
+    }
+    
+    return parsedRate;
   } catch (error) {
     console.error("Error getting AI rate:", error);
+    console.log("Using fallback rate of 500 basis points (5%)");
     return 500; // Fallback 5% rate
   }
 }

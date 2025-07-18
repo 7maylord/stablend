@@ -17,7 +17,7 @@ const creditScoreContract: Contract = new ethers.Contract(process.env.CREDIT_SCO
 // Mantle Sepolia Chainlink MNT/USD feed
 const chainlinkFeed: Contract = new ethers.Contract(process.env.CHAINLINK_MNT_USD_FEED!, chainlinkAbi, provider);
 
-async function fetchMarketData(user: string): Promise<any> {
+export async function fetchMarketData(user: string): Promise<any> {
   try {
     // Calculate pool utilization using total values
     const totalDeposits: bigint = await lendingMarket.totalDeposits();

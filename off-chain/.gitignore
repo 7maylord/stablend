@@ -1,0 +1,36 @@
+# Off-chain specific ignores
+
+# Data files (if they contain sensitive information)
+# Uncomment if needed:
+# *.json
+# *.csv
+# *.xlsx
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+
+# Cache directories
+.cache/ 

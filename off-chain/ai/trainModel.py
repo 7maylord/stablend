@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 # Load sample market data
-data = pd.read_json('offchain/data/marketData.json')
+data = pd.read_json('../data/marketData.json')
 
 # Prepare features and labels
 X = data[['utilization', 'credit_score', 'mnt_price']].values
@@ -28,6 +28,6 @@ model.compile(optimizer='adam', loss='mse')
 model.fit(X, y, epochs=100, batch_size=32, verbose=1)
 
 # Save model
-model.save('offchain/ai/rate_model.h5')
+model.save('rate_model.h5')
 
 print("Model trained and saved as rate_model.h5")
