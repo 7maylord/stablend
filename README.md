@@ -95,7 +95,7 @@ A decentralized lending platform built on Mantle Network with AI-powered dynamic
 2. **Fetch market data**
    ```bash
    yarn fetch-data
-   ```
+   ``` 
 
 3. **Update interest rates**
    ```bash

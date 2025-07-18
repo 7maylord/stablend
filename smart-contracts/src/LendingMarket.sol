@@ -12,17 +12,17 @@ contract LendingMarket is ReentrancyGuard, Ownable {
     IERC20 public collateralToken; // MNT
     RateAdjuster public rateAdjuster;
     AggregatorV3Interface public chainlinkFeed; // Chainlink MNT/USD feed
-    
+
     uint256 public constant COLLATERAL_RATIO = 150; // 150% collateralization
     uint256 public constant LIQUIDATION_THRESHOLD = 125; // 125% threshold for liquidation
     uint256 public constant LIQUIDATION_PENALTY = 10; // 10% penalty for liquidators
     uint256 public constant SECONDS_PER_YEAR = 365 days;
-    
+
     uint256 public totalDeposits;
     uint256 public totalBorrows;
     uint256 public lastUpdateTime;
     uint256 public reserveFactor = 1000; // 10% reserve factor (basis points)
-    
+
     struct Loan {
         uint256 amount;
         uint256 collateral;
@@ -32,7 +32,7 @@ contract LendingMarket is ReentrancyGuard, Ownable {
         uint256 lastAccrualTime;
         bool isActive;
     }
-    
+
     struct LiquidationInfo {
         uint256 collateralToLiquidate;
         uint256 debtToRepay;
@@ -43,7 +43,7 @@ contract LendingMarket is ReentrancyGuard, Ownable {
     mapping(address => Loan) public loans;
     mapping(address => uint256) public userDeposits;
     mapping(address => uint256) public userBorrows;
-    
+
     // Events
     event Deposit(address indexed user, uint256 amount);
     event Withdraw(address indexed user, uint256 amount);
@@ -53,12 +53,9 @@ contract LendingMarket is ReentrancyGuard, Ownable {
     event InterestAccrued(address indexed user, uint256 interest);
     event ReserveFactorUpdated(uint256 newReserveFactor);
 
-    constructor(
-        address _usdc, 
-        address _collateralToken, 
-        address _rateAdjuster,
-        address _chainlinkFeed
-    ) Ownable(msg.sender) {
+    constructor(address _usdc, address _collateralToken, address _rateAdjuster, address _chainlinkFeed)
+        Ownable(msg.sender)
+    {
         usdc = IERC20(_usdc);
         collateralToken = IERC20(_collateralToken);
         rateAdjuster = RateAdjuster(_rateAdjuster);
@@ -78,11 +75,11 @@ contract LendingMarket is ReentrancyGuard, Ownable {
     function deposit(uint256 amount) external nonReentrant {
         require(amount > 0, "Invalid amount");
         require(usdc.transferFrom(msg.sender, address(this), amount), "Transfer failed");
-        
+
         lenderBalances[msg.sender] += amount;
         userDeposits[msg.sender] += amount;
         totalDeposits += amount;
-        
+
         emit Deposit(msg.sender, amount);
     }
 
@@ -90,11 +87,11 @@ contract LendingMarket is ReentrancyGuard, Ownable {
     function withdraw(uint256 amount) external nonReentrant {
         require(amount > 0, "Invalid amount");
         require(lenderBalances[msg.sender] >= amount, "Insufficient balance");
-        
+
         lenderBalances[msg.sender] -= amount;
         userDeposits[msg.sender] -= amount;
         totalDeposits -= amount;
-        
+
         require(usdc.transfer(msg.sender, amount), "Transfer failed");
         emit Withdraw(msg.sender, amount);
     }
@@ -103,18 +100,22 @@ contract LendingMarket is ReentrancyGuard, Ownable {
     function borrow(uint256 amount, uint256 collateral) external nonReentrant updateInterest(msg.sender) {
         require(amount > 0 && collateral > 0, "Invalid amounts");
         require(!loans[msg.sender].isActive, "Active loan exists");
-        
+
+        // Check if there's enough liquidity
+        require(totalDeposits >= totalBorrows + amount, "Insufficient liquidity");
+
         // Get current MNT price from Chainlink
         (, int256 price,,, uint256 updatedAt) = chainlinkFeed.latestRoundData();
         require(price > 0, "Invalid price");
         require(block.timestamp - updatedAt < 3600, "Stale price"); // 1 hour staleness
-        
-        uint256 collateralValue = (collateral * uint256(price)) / 1e8; // Chainlink price in 8 decimals
-        require(collateralValue >= (amount * COLLATERAL_RATIO) / 100, "Insufficient collateral");
-        
-        // Check if there's enough liquidity
-        require(totalDeposits >= totalBorrows + amount, "Insufficient liquidity");
-        
+
+        // Calculate collateral value (price is in 8 decimals, convert to 18 decimals for calculation)
+        uint256 collateralValue = (collateral * uint256(price)) / 1e8;
+        // Scale the borrow amount (6 decimals) up to 18 decimals for the comparison.
+        uint256 requiredCollateral = ((amount * 10 ** 12) * COLLATERAL_RATIO) / 100;
+
+        require(collateralValue >= requiredCollateral, "Insufficient collateral");
+
         // Create loan
         loans[msg.sender] = Loan({
             amount: amount,
@@ -125,14 +126,14 @@ contract LendingMarket is ReentrancyGuard, Ownable {
             lastAccrualTime: block.timestamp,
             isActive: true
         });
-        
+
         userBorrows[msg.sender] = amount;
         totalBorrows += amount;
-        
+
         // Transfer tokens
         require(usdc.transfer(msg.sender, amount), "USDC transfer failed");
         require(collateralToken.transferFrom(msg.sender, address(this), collateral), "Collateral transfer failed");
-        
+
         emit Borrow(msg.sender, amount, collateral);
     }
 
@@ -142,13 +143,13 @@ contract LendingMarket is ReentrancyGuard, Ownable {
         require(loan.isActive, "No active loan");
         require(amount > 0, "Invalid amount");
         require(amount <= loan.amount + loan.interestAccrued, "Amount exceeds debt");
-        
+
         uint256 totalDebt = loan.amount + loan.interestAccrued;
         uint256 remainingDebt = totalDebt - amount;
-        
+
         // Transfer USDC from user
         require(usdc.transferFrom(msg.sender, address(this), amount), "Transfer failed");
-        
+
         // Update loan
         if (remainingDebt == 0) {
             // Loan fully repaid
@@ -164,7 +165,7 @@ contract LendingMarket is ReentrancyGuard, Ownable {
             userBorrows[msg.sender] = remainingDebt;
             totalBorrows -= (totalDebt - remainingDebt);
         }
-        
+
         emit Repay(msg.sender, amount);
     }
 
@@ -172,68 +173,94 @@ contract LendingMarket is ReentrancyGuard, Ownable {
     function liquidate(address user) external nonReentrant updateInterest(user) {
         Loan storage loan = loans[user];
         require(loan.isActive, "No active loan");
-        
+
         // Get current MNT price
         (, int256 price,,, uint256 updatedAt) = chainlinkFeed.latestRoundData();
         require(price > 0, "Invalid price");
         require(block.timestamp - updatedAt < 3600, "Stale price");
-        
+
         uint256 collateralValue = (loan.collateral * uint256(price)) / 1e8;
         uint256 totalDebt = loan.amount + loan.interestAccrued;
-        uint256 requiredCollateral = (totalDebt * LIQUIDATION_THRESHOLD) / 100;
-        
+        // Scale totalDebt (6 decimals) up to 18 decimals for comparison
+        uint256 requiredCollateral = ((totalDebt * 10 ** 12) * LIQUIDATION_THRESHOLD) / 100;
+
         require(collateralValue < requiredCollateral, "Not undercollateralized");
-        
+
         // Calculate liquidation amounts
         LiquidationInfo memory liquidation = _calculateLiquidation(loan, uint256(price));
-        
+
         // Transfer debt repayment from liquidator
         require(usdc.transferFrom(msg.sender, address(this), liquidation.debtToRepay), "Debt transfer failed");
-        
-        // Transfer collateral to liquidator
+
+        // Transfer collateral to liquidator (includes penalty)
         require(collateralToken.transfer(msg.sender, liquidation.collateralToLiquidate), "Collateral transfer failed");
-        
-        // Update loan
+
+        // Update loan - reduce both debt and collateral
+        uint256 debtReduction = liquidation.debtToRepay;
         loan.collateral -= liquidation.collateralToLiquidate;
-        loan.amount = totalDebt - liquidation.debtToRepay;
-        loan.interestAccrued = 0;
-        loan.lastAccrualTime = block.timestamp;
-        
-        // Update totals
-        totalBorrows -= liquidation.debtToRepay;
-        userBorrows[user] = loan.amount;
-        
-        // If loan is fully liquidated
-        if (loan.amount == 0) {
-            require(collateralToken.transfer(user, loan.collateral), "Remaining collateral transfer failed");
-            delete loans[user];
+
+        if (debtReduction >= totalDebt) {
+            // Full liquidation
+            totalBorrows -= loan.amount;
             userBorrows[user] = 0;
+
+            // Return any remaining collateral to user
+            if (loan.collateral > 0) {
+                require(collateralToken.transfer(user, loan.collateral), "Remaining collateral transfer failed");
+            }
+            delete loans[user];
+        } else {
+            // Partial liquidation
+            loan.amount = totalDebt - debtReduction;
+            loan.interestAccrued = 0;
+            loan.lastAccrualTime = block.timestamp;
+
+            totalBorrows -= debtReduction;
+            userBorrows[user] = loan.amount;
         }
-        
+
         emit Liquidate(user, msg.sender, liquidation.collateralToLiquidate, liquidation.debtToRepay);
     }
 
     // Calculate liquidation amounts
     function _calculateLiquidation(Loan storage loan, uint256 price) internal view returns (LiquidationInfo memory) {
         uint256 totalDebt = loan.amount + loan.interestAccrued;
-        uint256 collateralValue = (loan.collateral * price) / 1e8;
-        
-        // Liquidate enough collateral to cover debt + penalty
-        uint256 debtWithPenalty = totalDebt + (totalDebt * LIQUIDATION_PENALTY) / 100;
-        uint256 collateralToLiquidate = (debtWithPenalty * 1e8) / price;
-        
-        // Don't liquidate more than available collateral
-        if (collateralToLiquidate > loan.collateral) {
-            collateralToLiquidate = loan.collateral;
+
+        // Calculate maximum liquidatable debt (e.g., 50% of total debt for partial liquidation)
+        // For full liquidation, this would be totalDebt
+        uint256 maxLiquidatableDebt = totalDebt / 2; // 50% max partial liquidation
+        if (maxLiquidatableDebt == 0) {
+            maxLiquidatableDebt = totalDebt; // If debt is small, liquidate all
         }
-        
-        uint256 debtToRepay = (collateralToLiquidate * price) / 1e8;
-        uint256 liquidatorReward = (debtToRepay * LIQUIDATION_PENALTY) / 100;
-        
+
+        // Calculate collateral needed to cover debt + penalty
+        // Scale debt from 6 decimals to 18 decimals for calculation
+        uint256 debtValue18Decimals = maxLiquidatableDebt * 10 ** 12;
+        uint256 collateralNeeded = debtValue18Decimals / uint256(price) * 1e8;
+
+        // Add liquidation penalty (liquidator gets extra collateral)
+        uint256 penaltyCollateral = (collateralNeeded * LIQUIDATION_PENALTY) / 100;
+        uint256 totalCollateralToLiquidate = collateralNeeded + penaltyCollateral;
+
+        // Don't liquidate more collateral than available
+        if (totalCollateralToLiquidate > loan.collateral) {
+            totalCollateralToLiquidate = loan.collateral;
+
+            // Recalculate debt to repay based on available collateral
+            uint256 collateralValue = (totalCollateralToLiquidate * uint256(price)) / 1e8;
+            // Account for penalty: liquidator pays less debt but gets penalty bonus
+            uint256 debtToCover = (collateralValue * 100) / (100 + LIQUIDATION_PENALTY);
+            maxLiquidatableDebt = debtToCover / 10 ** 12; // Scale back to 6 decimals
+
+            if (maxLiquidatableDebt > totalDebt) {
+                maxLiquidatableDebt = totalDebt;
+            }
+        }
+
         return LiquidationInfo({
-            collateralToLiquidate: collateralToLiquidate,
-            debtToRepay: debtToRepay,
-            liquidatorReward: liquidatorReward
+            collateralToLiquidate: totalCollateralToLiquidate,
+            debtToRepay: maxLiquidatableDebt,
+            liquidatorReward: penaltyCollateral
         });
     }
 
@@ -241,14 +268,14 @@ contract LendingMarket is ReentrancyGuard, Ownable {
     function _accrueInterest(address user) internal {
         Loan storage loan = loans[user];
         if (!loan.isActive) return;
-        
+
         uint256 timeElapsed = block.timestamp - loan.lastAccrualTime;
         if (timeElapsed == 0) return;
-        
+
         uint256 interest = (loan.amount * loan.rate * timeElapsed) / (SECONDS_PER_YEAR * 10000);
         loan.interestAccrued += interest;
         loan.lastAccrualTime = block.timestamp;
-        
+
         emit InterestAccrued(user, interest);
     }
 
@@ -256,30 +283,30 @@ contract LendingMarket is ReentrancyGuard, Ownable {
     function getLoanInfo(address user) external view returns (Loan memory) {
         return loans[user];
     }
-    
+
     function getTotalDebt(address user) external view returns (uint256) {
         Loan storage loan = loans[user];
         if (!loan.isActive) return 0;
-        
+
         uint256 timeElapsed = block.timestamp - loan.lastAccrualTime;
         uint256 interest = (loan.amount * loan.rate * timeElapsed) / (SECONDS_PER_YEAR * 10000);
         return loan.amount + loan.interestAccrued + interest;
     }
-    
+
     function getCollateralRatio(address user) external view returns (uint256) {
         Loan storage loan = loans[user];
         if (!loan.isActive) return 0;
-        
+
         (, int256 price,,,) = chainlinkFeed.latestRoundData();
         if (price <= 0) return 0;
-        
+
         uint256 collateralValue = (loan.collateral * uint256(price)) / 1e8;
         uint256 totalDebt = loan.amount + loan.interestAccrued;
-        
+
         if (totalDebt == 0) return type(uint256).max;
         return (collateralValue * 100) / totalDebt;
     }
-    
+
     function getUtilizationRate() external view returns (uint256) {
         if (totalDeposits == 0) return 0;
         return (totalBorrows * 10000) / totalDeposits; // Basis points
@@ -291,7 +318,7 @@ contract LendingMarket is ReentrancyGuard, Ownable {
         reserveFactor = newReserveFactor;
         emit ReserveFactorUpdated(newReserveFactor);
     }
-    
+
     function setChainlinkFeed(address newFeed) external onlyOwner {
         chainlinkFeed = AggregatorV3Interface(newFeed);
     }

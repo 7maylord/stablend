@@ -3,5 +3,10 @@ src = "src"
 out = "out"
 libs = ["lib"]
 
+[rpc_endpoints]
+mantle_sepolia = "https://mantle-sepolia.g.alchemy.com/v2/hOFsEmyHlw0Ez4aLryoLetL-YwfWJC2D"
+
+[etherscan]
+mantle_sepolia = { key = "S11KSXUFB5SPAHCDUTV15PMC5QD1GJJF36" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

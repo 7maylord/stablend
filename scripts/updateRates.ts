@@ -71,5 +71,7 @@ async function updateRates(userAddress: string): Promise<void> {
 }
 
 // Example usage
-const sampleUser: string = "0xSampleUserAddress";
-updateRates(sampleUser).catch(console.error);
+if (require.main === module) {
+  const userAddress = process.argv[2] || wallet.address;
+  updateRates(userAddress).catch(console.error);
+}

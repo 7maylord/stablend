@@ -36,17 +36,17 @@ contract CreditScoreTest is Test {
 
     function testCalculateScore() public {
         vm.prank(admin);
-        
+
         // Test different transaction counts
         creditScore.updateCreditScore(user1, 5);
         assertEq(creditScore.getCreditScore(user1), 300, "Low transaction count should give 300");
-        
+
         creditScore.updateCreditScore(user1, 15);
         assertEq(creditScore.getCreditScore(user1), 500, "Medium transaction count should give 500");
-        
+
         creditScore.updateCreditScore(user1, 60);
         assertEq(creditScore.getCreditScore(user1), 700, "High transaction count should give 700");
-        
+
         creditScore.updateCreditScore(user1, 150);
         assertEq(creditScore.getCreditScore(user1), 900, "Very high transaction count should give 900");
     }

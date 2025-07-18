@@ -65,5 +65,7 @@ async function updateCreditScores(userAddress: string): Promise<void> {
 }
 
 // Example usage
-const sampleUser: string = "0xSampleUserAddress";
-updateCreditScores(sampleUser).catch(console.error);
+if (require.main === module) {
+  const userAddress = process.argv[2] || wallet.address;
+  updateCreditScores(userAddress).catch(console.error);
+}
