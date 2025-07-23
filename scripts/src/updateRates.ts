@@ -1,7 +1,5 @@
 import { ethers, Contract, Wallet, JsonRpcProvider } from "ethers";
 import * as dotenv from "dotenv";
-import { execSync } from "child_process";
-import * as path from "path";
 import { fetchMarketData } from "./fetchMarketData";
 
 dotenv.config();
@@ -19,6 +17,9 @@ const rateAdjusterAbi: string[] = [
 // Contract addresses
 const RATE_ADJUSTER_ADDRESS: string = process.env.RATE_ADJUSTER_ADDRESS!;
 
+// AI API endpoint (production)
+const AI_API_ENDPOINT: string = process.env.AI_API_ENDPOINT || 'https://your-ai-api-domain.com/predict';
+
 // Mock Chainlink Functions with admin wallet
 async function callChainlinkFunctions(user: string, rate: number): Promise<void> {
   try {
@@ -32,26 +33,40 @@ async function callChainlinkFunctions(user: string, rate: number): Promise<void>
   }
 }
 
-// Get AI-predicted rate using virtual environment
+// Get AI-predicted rate from production API
 async function getAIPredictedRate(user: string): Promise<number> {
   try {
     // Get market data directly
     const marketData = await fetchMarketData(user);
     
-    // Get the path to the AI directory
-    const aiDir = path.join(__dirname, '../../off-chain/ai');
+    // Call production AI API
+    const response = await fetch(AI_API_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(marketData),
+    });
+
+    if (!response.ok) {
+      throw new Error(`AI API responded with status: ${response.status}`);
+    }
+
+    const result = await response.json();
     
-    // Run rateModel.py with virtual environment
-    const rate = execSync(`cd ${aiDir} && ./run_model.sh '${JSON.stringify(marketData)}'`, { encoding: "utf-8" });
-    const parsedRate = parseInt(rate);
+    if (!result.success) {
+      throw new Error(`AI API error: ${result.error}`);
+    }
+
+    const rate = result.rate;
     
     // Validate the rate is a valid number
-    if (isNaN(parsedRate) || parsedRate <= 0) {
+    if (isNaN(rate) || rate <= 0) {
       console.log("AI model returned invalid rate, using fallback");
       return 500; // Fallback 5% rate
     }
     
-    return parsedRate;
+    return rate;
   } catch (error) {
     console.error("Error getting AI rate:", error);
     console.log("Using fallback rate of 500 basis points (5%)");
