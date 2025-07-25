@@ -2,28 +2,33 @@ import { ethers, Contract, Wallet, JsonRpcProvider } from "ethers";
 import * as dotenv from "dotenv";
 import { fetchMarketData } from "./fetchMarketData";
 
+// Import RateAdjuster ABI and type definitions
+import RateAdjusterABI from '../abi/RateAdjuster.json';
+
 dotenv.config();
+
+// Types for API response
+interface AIApiResponse {
+  success: boolean;
+  rate: number;
+  error?: string;
+}
 
 // Mantle Sepolia testnet provider and wallet
 const provider: JsonRpcProvider = new ethers.JsonRpcProvider(process.env.MANTLE_SEPOLIA_RPC);
 const wallet: Wallet = new ethers.Wallet(process.env.PRIVATE_KEY!, provider);
 
-// RateAdjuster contract ABI
-const rateAdjusterAbi: string[] = [
-  "function updateUserRate(address user, uint256 newRate) external",
-  "function getUserRate(address user) view returns (uint256)"
-];
-
 // Contract addresses
 const RATE_ADJUSTER_ADDRESS: string = process.env.RATE_ADJUSTER_ADDRESS!;
 
 // AI API endpoint (production)
-const AI_API_ENDPOINT: string = process.env.AI_API_ENDPOINT || 'https://your-ai-api-domain.com/predict';
+const AI_API_ENDPOINT: string = process.env.AI_API_ENDPOINT || 'https://stablend.onrender.com/predict';
+
 
 // Mock Chainlink Functions with admin wallet
 async function callChainlinkFunctions(user: string, rate: number): Promise<void> {
   try {
-    const rateAdjuster: Contract = new ethers.Contract(RATE_ADJUSTER_ADDRESS, rateAdjusterAbi, wallet);
+    const rateAdjuster: Contract = new ethers.Contract(RATE_ADJUSTER_ADDRESS, RateAdjusterABI, wallet);
     const tx = await rateAdjuster.updateUserRate(user, rate);
     await tx.wait();
     console.log(`Mock Chainlink Functions: Updated rate for ${user} to ${rate} basis points`);
@@ -52,7 +57,7 @@ async function getAIPredictedRate(user: string): Promise<number> {
       throw new Error(`AI API responded with status: ${response.status}`);
     }
 
-    const result = await response.json();
+    const result = await response.json() as AIApiResponse;
     
     if (!result.success) {
       throw new Error(`AI API error: ${result.error}`);
@@ -86,7 +91,7 @@ async function updateRates(userAddress: string): Promise<void> {
     await callChainlinkFunctions(userAddress, newRate);
     
     // Verify update
-    const rateAdjuster: Contract = new ethers.Contract(RATE_ADJUSTER_ADDRESS, rateAdjusterAbi, provider);
+    const rateAdjuster: Contract = new ethers.Contract(RATE_ADJUSTER_ADDRESS, RateAdjusterABI, provider);
     const updatedRate: bigint = await rateAdjuster.getUserRate(userAddress);
     console.log(`Verified rate: ${updatedRate} basis points`);
   } catch (error) {

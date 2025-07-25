@@ -3,8 +3,8 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
-// Mantle testnet provider and wallet
-const provider: JsonRpcProvider = new ethers.JsonRpcProvider(process.env.MANTLE_TESTNET_RPC);
+// Mantle Sepolia testnet provider and wallet
+const provider: JsonRpcProvider = new ethers.JsonRpcProvider(process.env.MANTLE_SEPOLIA_RPC);
 const wallet: Wallet = new ethers.Wallet(process.env.PRIVATE_KEY!, provider);
 
 // CreditScore and LendingMarket contract ABIs
@@ -54,14 +54,24 @@ async function getTransactionCount(user: string): Promise<number> {
 // Main function to update credit score
 async function updateCreditScores(userAddress: string): Promise<void> {
   try {
+    if (!ethers.isAddress(userAddress)) {
+      throw new Error('Invalid Ethereum address');
+    }
+
     console.log(`Updating credit score for user: ${userAddress}`);
     
     // Fetch transaction count
     const transactionCount: number = await getTransactionCount(userAddress);
+    console.log(`Fetched transaction count: ${transactionCount}`);
     
     // Call updateCreditScore on CreditScore.sol
     const tx = await creditScore.updateCreditScore(userAddress, transactionCount);
-    await tx.wait();
+    console.log(`Transaction submitted: ${tx.hash}`);
+    const receipt = await tx.wait();
+    
+    if (receipt.status === 0) {
+      throw new Error('Transaction failed');
+    }
     
     console.log(`Updated credit score for ${userAddress} with ${transactionCount} transactions`);
     
@@ -70,6 +80,8 @@ async function updateCreditScores(userAddress: string): Promise<void> {
     console.log(`Verified credit score: ${updatedScore}`);
   } catch (error) {
     console.error("Error updating credit score:", error);
+    // Re-throw to ensure calling code knows about the failure
+    throw error;
   }
 }
 
