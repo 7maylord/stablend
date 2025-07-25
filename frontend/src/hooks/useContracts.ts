@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useAccount, usePublicClient, useWalletClient } from 'wagmi';
-import { createPublicClient, http } from 'viem';
+import { useState, useEffect, useCallback } from 'react';
+import { useAccount } from 'wagmi';
+import { createPublicClient, createWalletClient, http, custom } from 'viem';
 import { 
   LENDING_MARKET_ADDRESS, 
   RATE_ADJUSTER_ADDRESS, 
@@ -23,11 +23,10 @@ import { showSuccessToast, showErrorToast, showInfoToast } from '@/components/To
 
 export function useContracts() {
   const { address, isConnected } = useAccount();
-  const publicClient = usePublicClient();
-  const { data: walletClient } = useWalletClient();
 
   // Direct RPC client for Mantle Sepolia
   const mantleRpcUrl = process.env.NEXT_PUBLIC_MANTLE_SEPOLIA_RPC || 'https://mantle-sepolia.g.alchemy.com/v2/hOFsEmyHlw0Ez4aLryoLetL-YwfWJC2D'
+  
   const directPublicClient = createPublicClient({
     chain: {
       id: 5003,
@@ -44,6 +43,26 @@ export function useContracts() {
       },
     },
     transport: http(mantleRpcUrl)
+  })
+
+  // Direct wallet client using window.ethereum
+  const directWalletClient = createWalletClient({
+    chain: {
+      id: 5003,
+      name: 'Mantle Sepolia',
+      network: 'mantle-sepolia',
+      nativeCurrency: {
+        decimals: 18,
+        name: 'Ether',
+        symbol: 'ETH',
+      },
+      rpcUrls: {
+        default: { http: [mantleRpcUrl] },
+        public: { http: [mantleRpcUrl] },
+      },
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    transport: custom(window.ethereum as any)
   })
 
   // State for form inputs
@@ -68,15 +87,63 @@ export function useContracts() {
   });
 
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  // Helper function to calculate required collateral for a given borrow amount
+  const calculateRequiredCollateral = (borrowAmountUsdc: string): string => {
+    if (!borrowAmountUsdc || Number(borrowAmountUsdc) <= 0 || Number(userStats.mntPrice) <= 0) {
+      return '0';
+    }
+
+    try {
+      const borrowAmountParsed = parseUnits(borrowAmountUsdc, 6);
+      const mntPrice = BigInt(Math.floor(Number(userStats.mntPrice) * 1e8));
+      const requiredCollateralValue = ((borrowAmountParsed * BigInt(10 ** 12)) * BigInt(150)) / BigInt(100);
+      const requiredMntAmount = (requiredCollateralValue * BigInt(1e8)) / mntPrice;
+      return formatUnits(requiredMntAmount, 18);
+    } catch (error) {
+      console.error('Error calculating required collateral:', error);
+      return '0';
+    }
+  };
+
+  // Helper function to calculate max borrow for a given collateral amount
+  const calculateMaxBorrow = (collateralAmountMnt: string): string => {
+    if (!collateralAmountMnt || Number(collateralAmountMnt) <= 0 || Number(userStats.mntPrice) <= 0) {
+      return '0';
+    }
+
+    try {
+      const mntAmount = parseUnits(collateralAmountMnt, 18);
+      const mntPrice = BigInt(Math.floor(Number(userStats.mntPrice) * 1e8));
+      const collateralValue = (mntAmount * mntPrice) / BigInt(1e8);
+      const maxBorrow = (collateralValue * BigInt(100)) / (BigInt(150) * BigInt(10 ** 12));
+      return formatUnits(maxBorrow, 6);
+    } catch (error) {
+      console.error('Error calculating max borrow:', error);
+      return '0';
+    }
+  };
+
+  // Helper function to estimate gas with buffer
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const estimateGasWithBuffer = async (contractCall: any) => {
+    try {
+      const gasEstimate = await directPublicClient.estimateContractGas(contractCall);
+      // Add 20% buffer to gas estimate
+      return gasEstimate + (gasEstimate * BigInt(20)) / BigInt(100);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (error) {
+      return BigInt(200000000); 
+    }
+  };
 
   // Fetch user data from contracts
-  const fetchUserData = async () => {
+  const fetchUserData = useCallback(async () => {
     if (!address) return;
 
     try {
       setIsLoading(true);
-      setError(null);
+      showInfoToast('Fetching user data...');
 
       // Fetch lender balance
       const balance = await directPublicClient.readContract({
@@ -137,50 +204,80 @@ export function useContracts() {
         balance: formatUnits(balance as bigint, 6),
         creditScore: (creditScore as bigint).toString(),
         rate: ((userRate as bigint) / BigInt(100)).toString(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mntPrice: formatUnits((priceData as any)[1] as bigint, 8)
       });
 
       setLoan({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         amount: formatUnits((loanData as any)[0] as bigint, 6),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         collateral: formatUnits((loanData as any)[1] as bigint, 18),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         interest: formatUnits((loanData as any)[2] as bigint, 6),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         rate: (loanData as any)[4].toString()
       });
 
     } catch (err) {
       console.error('Error fetching user data:', err);
-      setError('Failed to fetch user data');
+      showErrorToast('Failed to fetch user data');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [address, directPublicClient, formatUnits, setUserStats, setLoan, showInfoToast, showErrorToast]);
 
-  // Deposit USDC
+  // Handle deposit
   const handleDeposit = async () => {
-    if (!address || !walletClient || !publicClient || !depositAmount) return;
+    if (!address || !depositAmount) {
+      showErrorToast('Please connect wallet and enter amount');
+      return;
+    }
+
+    // Frontend validation: Check if amount is valid
+    if (Number(depositAmount) <= 0) {
+      showErrorToast('Please enter a valid amount greater than 0');
+      return;
+    }
 
     try {
       setIsLoading(true);
-      setError(null);
+      showInfoToast('Depositing...');
 
       const amount = parseUnits(depositAmount, 6);
 
       // First approve USDC spending
-      const approveHash = await walletClient.writeContract({
+      const approveCall = {
         address: USDC_ADDRESS as `0x${string}`,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [LENDING_MARKET_ADDRESS, amount]
+        args: [LENDING_MARKET_ADDRESS, amount],
+        account: address
+      };
+
+      const approveGas = await estimateGasWithBuffer(approveCall);
+      
+      const approveHash = await directWalletClient.writeContract({
+        ...approveCall,
+        gas: approveGas
       });
 
       await directPublicClient.waitForTransactionReceipt({ hash: approveHash });
 
       // Then deposit
-      const depositHash = await walletClient.writeContract({
+      const depositCall = {
         address: LENDING_MARKET_ADDRESS as `0x${string}`,
         abi: lendingMarketAbi,
         functionName: 'deposit',
-        args: [amount]
+        args: [amount],
+        account: address
+      };
+
+      const depositGas = await estimateGasWithBuffer(depositCall);
+
+      const depositHash = await directWalletClient.writeContract({
+        ...depositCall,
+        gas: depositGas
       });
 
       await directPublicClient.waitForTransactionReceipt({ hash: depositHash });
@@ -188,52 +285,102 @@ export function useContracts() {
       // Refresh data
       await fetchUserData();
       setDepositAmount('');
-      showSuccessToast('Deposit successful! 🎉');
-
-    } catch (err) {
+      showSuccessToast('Deposit successful!');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
       console.error('Deposit error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Deposit failed';
-      setError('Deposit failed');
+      let errorMessage = 'Deposit failed';
       
-      if (errorMessage.includes('gas')) {
-        showErrorToast('Transaction failed: Gas limit too low. Please try again.');
-      } else if (errorMessage.includes('insufficient')) {
-        showErrorToast('Insufficient USDC balance. Please check your balance.');
-      } else {
-        showErrorToast('Deposit failed. Please try again.');
+      if (err.message?.includes('insufficient')) {
+        errorMessage = 'Insufficient USDC balance';
+      } else if (err.message?.includes('gas')) {
+        errorMessage = 'Gas estimation failed or insufficient gas';
+      } else if (err.message?.includes('rejected')) {
+        errorMessage = 'Transaction rejected by user';
       }
+      
+      showErrorToast(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Borrow USDC
+  // Handle borrow
   const handleBorrow = async () => {
-    if (!address || !walletClient || !publicClient || !borrowAmount || !collateralAmount) return;
+    if (!address || !borrowAmount || !collateralAmount) {
+      showErrorToast('Please connect wallet and enter amounts');
+      return;
+    }
 
     try {
       setIsLoading(true);
-      setError(null);
+      showInfoToast('Borrowing...');
 
       const borrowAmountParsed = parseUnits(borrowAmount, 6);
       const collateralAmountParsed = parseUnits(collateralAmount, 18);
 
-      // Approve MNT spending
-      const approveHash = await walletClient.writeContract({
+      // Frontend validation: Check if user already has an active loan
+      if (Number(loan.amount) > 0) {
+        showErrorToast('You already have an active loan. Please repay your current loan first.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Frontend validation: Check if amounts are valid
+      if (Number(borrowAmount) <= 0 || Number(collateralAmount) <= 0) {
+        showErrorToast('Please enter valid amounts greater than 0');
+        setIsLoading(false);
+        return;
+      }
+
+      // Frontend validation: Check collateralization ratio before calling contract
+      if (Number(userStats.mntPrice) > 0) {
+        const mntPrice = BigInt(Math.floor(Number(userStats.mntPrice) * 1e8)); // Convert to 8 decimals
+        const collateralValue = (collateralAmountParsed * mntPrice) / BigInt(1e8); // 18 decimals
+        const requiredCollateral = ((borrowAmountParsed * BigInt(10 ** 12)) * BigInt(150)) / BigInt(100); // 150% ratio, 18 decimals
+
+        if (collateralValue < requiredCollateral) {
+          const requiredMnt = formatUnits(requiredCollateral / mntPrice * BigInt(1e8), 18);
+          showErrorToast(`Insufficient collateral. You need at least ${requiredMnt} MNT for this borrow amount.`);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // Approve MNT spending with proper gas estimation
+      const approveCall = {
         address: MNT_ADDRESS as `0x${string}`,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [LENDING_MARKET_ADDRESS, collateralAmountParsed]
+        args: [LENDING_MARKET_ADDRESS, collateralAmountParsed],
+        account: address
+      };
+
+      const approveGas = await estimateGasWithBuffer(approveCall);
+      
+      const approveHash = await directWalletClient.writeContract({
+        ...approveCall,
+        gas: approveGas
       });
 
       await directPublicClient.waitForTransactionReceipt({ hash: approveHash });
 
-      // Borrow
-      const borrowHash = await walletClient.writeContract({
+      // Borrow with proper gas estimation
+      const borrowCall = {
         address: LENDING_MARKET_ADDRESS as `0x${string}`,
         abi: lendingMarketAbi,
         functionName: 'borrow',
-        args: [borrowAmountParsed, collateralAmountParsed]
+        args: [borrowAmountParsed, collateralAmountParsed],
+        account: address
+      };
+
+      const borrowGas = await estimateGasWithBuffer(borrowCall);
+      
+      console.log('Estimated gas for borrow:', borrowGas.toString());
+
+      const borrowHash = await directWalletClient.writeContract({
+        ...borrowCall,
+        gas: borrowGas
       });
 
       await directPublicClient.waitForTransactionReceipt({ hash: borrowHash });
@@ -242,34 +389,59 @@ export function useContracts() {
       await fetchUserData();
       setBorrowAmount('');
       setCollateralAmount('');
-      showSuccessToast('Borrow successful! 💰');
-
-    } catch (err) {
+      showSuccessToast('Borrow successful!');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
       console.error('Borrow error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Borrow failed';
-      setError('Borrow failed');
+      let errorMessage = 'Borrow failed';
       
-      if (errorMessage.includes('gas')) {
-        showErrorToast('Transaction failed: Gas limit too low. Please try again.');
-      } else if (errorMessage.includes('Insufficient collateral')) {
-        showErrorToast('Insufficient collateral. Please increase your MNT amount.');
-      } else if (errorMessage.includes('Insufficient liquidity')) {
-        showErrorToast('Insufficient liquidity in the protocol. Please try a smaller amount.');
-      } else {
-        showErrorToast('Borrow failed. Please check your collateral and try again.');
+      if (err.message?.includes('insufficient')) {
+        errorMessage = 'Insufficient collateral or balance';
+      } else if (err.message?.includes('liquidity')) {
+        errorMessage = 'Insufficient liquidity';
+      } else if (err.message?.includes('gas')) {
+        errorMessage = 'Gas estimation failed or insufficient gas';
+      } else if (err.message?.includes('rejected')) {
+        errorMessage = 'Transaction rejected by user';
+      } else if (err.message?.includes('intrinsic gas too low')) {
+        errorMessage = 'Gas limit too low - please try again';
       }
+      
+      showErrorToast(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Repay loan
+  // Handle repay
   const handleRepay = async () => {
-    if (!address || !walletClient || !publicClient || !repayAmount) return;
+    if (!address || !repayAmount) {
+      showErrorToast('Please connect wallet and enter amount');
+      return;
+    }
+
+    // Frontend validation: Check if user has an active loan
+    if (Number(loan.amount) <= 0) {
+      showErrorToast('You do not have an active loan to repay');
+      return;
+    }
+
+    // Frontend validation: Check if amount is valid
+    if (Number(repayAmount) <= 0) {
+      showErrorToast('Please enter a valid amount greater than 0');
+      return;
+    }
+
+    // Frontend validation: Check if repay amount doesn't exceed total debt
+    const totalDebt = Number(loan.amount) + Number(loan.interest);
+    if (Number(repayAmount) > totalDebt) {
+      showErrorToast(`Repay amount cannot exceed total debt of ${totalDebt.toFixed(6)} USDC`);
+      return;
+    }
 
     try {
       setIsLoading(true);
-      setError(null);
+      showInfoToast('Repaying...');
 
       const amount = parseUnits(repayAmount, 6);
 
@@ -281,24 +453,44 @@ export function useContracts() {
         args: [address]
       });
 
-      const totalDebt = ((loanData as any)[0] as bigint) + ((loanData as any)[2] as bigint);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const principal = (loanData as any)[0] as bigint;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const interest = (loanData as any)[2] as bigint;
+      const totalDebt = principal + interest;
 
       // Approve USDC spending for total debt
-      const approveHash = await walletClient.writeContract({
+      const approveCall = {
         address: USDC_ADDRESS as `0x${string}`,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [LENDING_MARKET_ADDRESS, totalDebt]
+        args: [LENDING_MARKET_ADDRESS, totalDebt],
+        account: address
+      };
+
+      const approveGas = await estimateGasWithBuffer(approveCall);
+
+      const approveHash = await directWalletClient.writeContract({
+        ...approveCall,
+        gas: approveGas
       });
 
       await directPublicClient.waitForTransactionReceipt({ hash: approveHash });
 
       // Repay
-      const repayHash = await walletClient.writeContract({
+      const repayCall = {
         address: LENDING_MARKET_ADDRESS as `0x${string}`,
         abi: lendingMarketAbi,
         functionName: 'repay',
-        args: [amount]
+        args: [amount],
+        account: address
+      };
+
+      const repayGas = await estimateGasWithBuffer(repayCall);
+
+      const repayHash = await directWalletClient.writeContract({
+        ...repayCall,
+        gas: repayGas
       });
 
       await directPublicClient.waitForTransactionReceipt({ hash: repayHash });
@@ -306,31 +498,32 @@ export function useContracts() {
       // Refresh data
       await fetchUserData();
       setRepayAmount('');
-      showSuccessToast('Repayment successful! ✅');
-
-    } catch (err) {
+      showSuccessToast('Repay successful!');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
       console.error('Repay error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Repay failed';
-      setError('Repay failed');
+      let errorMessage = 'Repay failed';
       
-      if (errorMessage.includes('gas')) {
-        showErrorToast('Transaction failed: Gas limit too low. Please try again.');
-      } else if (errorMessage.includes('insufficient')) {
-        showErrorToast('Insufficient USDC balance. Please check your balance.');
-      } else {
-        showErrorToast('Repayment failed. Please try again.');
+      if (err.message?.includes('insufficient')) {
+        errorMessage = 'Insufficient USDC balance';
+      } else if (err.message?.includes('gas')) {
+        errorMessage = 'Gas estimation failed or insufficient gas';
+      } else if (err.message?.includes('rejected')) {
+        errorMessage = 'Transaction rejected by user';
       }
+      
+      showErrorToast(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Fetch data when user connects
+  // Auto-fetch data when wallet connects
   useEffect(() => {
     if (isConnected && address) {
       fetchUserData();
     }
-  }, [isConnected, address]);
+  }, [isConnected, address, fetchUserData]);
 
   return {
     // State
@@ -345,12 +538,15 @@ export function useContracts() {
     userStats,
     loan,
     isLoading,
-    error,
+    isConnected,
+    address,
 
-    // Actions
+    // Functions
+    fetchUserData,
     handleDeposit,
     handleBorrow,
     handleRepay,
-    fetchUserData
+    calculateRequiredCollateral,
+    calculateMaxBorrow
   };
 } 

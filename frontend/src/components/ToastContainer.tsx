@@ -65,6 +65,7 @@ export const showSuccessToast = (message: string) => {
     closeOnClick: true,
     pauseOnHover: true,
     draggable: true,
+    icon: undefined,
   });
 };
 
@@ -77,6 +78,7 @@ export const showErrorToast = (message: string) => {
     closeOnClick: true,
     pauseOnHover: true,
     draggable: true,
+    icon: undefined,
   });
 };
 
@@ -89,6 +91,7 @@ export const showInfoToast = (message: string) => {
     closeOnClick: true,
     pauseOnHover: true,
     draggable: true,
+    icon: undefined,
   });
 };
 
@@ -101,6 +104,7 @@ export const showWarningToast = (message: string) => {
     closeOnClick: true,
     pauseOnHover: true,
     draggable: true,
+    icon: undefined,
   });
 };
 
@@ -120,9 +124,6 @@ export function ToastContainer() {
       theme="light"
       toastStyle={{
         fontFamily: 'inherit',
-      }}
-      progressStyle={{
-        background: 'rgba(255, 255, 255, 0.3)',
       }}
     />
   );

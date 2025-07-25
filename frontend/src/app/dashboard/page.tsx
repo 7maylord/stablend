@@ -2,10 +2,11 @@
 
 import { useAccount, useDisconnect } from 'wagmi'
 import { useAppKit } from '@reown/appkit/react'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useContracts } from '@/hooks/useContracts'
-import { showInfoToast, showSuccessToast, showWarningToast } from '@/components/ToastContainer'
+import { showInfoToast } from '@/components/ToastContainer'
+
 
 export default function Dashboard() {
   const { address, isConnected } = useAccount()
@@ -26,11 +27,12 @@ export default function Dashboard() {
     userStats,
     loan,
     isLoading,
-    error,
     handleDeposit,
     handleBorrow,
     handleRepay,
-    fetchUserData
+    fetchUserData,
+    calculateRequiredCollateral,
+    calculateMaxBorrow
   } = useContracts()
 
   const shortenAddress = (address: string) => {
@@ -222,23 +224,6 @@ export default function Dashboard() {
                       </p>
                     </div>
 
-                    {/* Error Display */}
-                    {error && (
-                      <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                            <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                            </svg>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-red-800">Transaction Failed</h4>
-                            <p className="text-red-700 text-sm">{error}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="border border-gray-200 rounded-xl p-6 hover:border-blue-300 transition-colors card-hover-effect">
                         <div className="flex items-center justify-between mb-4">
@@ -307,26 +292,9 @@ export default function Dashboard() {
                     <div>
                       <h3 className="text-xl font-semibold text-gray-900 mb-4">Borrow Assets</h3>
                       <p className="text-gray-600 mb-6">
-                        Borrow against your collateral. You'll need to deposit assets first to borrow.
+                        Borrow against your collateral. You&apos;ll need to deposit assets first to borrow.
                       </p>
                     </div>
-
-                    {/* Error Display */}
-                    {error && (
-                      <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                            <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                            </svg>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-red-800">Transaction Failed</h4>
-                            <p className="text-red-700 text-sm">{error}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
 
                     {/* Loan Information */}
                     {Number(loan.amount) > 0 ? (
@@ -401,52 +369,31 @@ export default function Dashboard() {
                                 type="number"
                                 placeholder="0.00"
                                 value={borrowAmount}
-                                onChange={(e) => {
-                                  setBorrowAmount(e.target.value);
-                                  // Calculate required collateral based on USDC amount
-                                  if (e.target.value && Number(userStats.mntPrice) > 0) {
-                                    const usdcAmount = Number(e.target.value);
-                                    const mntPrice = Number(userStats.mntPrice);
-                                    // 150% collateralization ratio (from smart contract)
-                                    const requiredCollateral = (usdcAmount * 1.5) / mntPrice;
-                                    setCollateralAmount(requiredCollateral.toFixed(6));
-                                  } else {
-                                    setCollateralAmount('');
-                                  }
-                                }}
+                                onChange={(e) => setBorrowAmount(e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               />
+                              {borrowAmount && Number(userStats.mntPrice) > 0 && (
+                                <div className="text-xs text-gray-500 mt-1 space-y-1">
+                                  <p>Required collateral: {calculateRequiredCollateral(borrowAmount)} MNT</p>
+                                  <p>Collateralization ratio: 150%</p>
+                                </div>
+                              )}
                             </div>
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">
-                                MNT Collateral (Required: 150%)
+                                MNT Collateral
                               </label>
                               <input
                                 type="number"
                                 placeholder="0.00"
                                 value={collateralAmount}
-                                onChange={(e) => {
-                                  setCollateralAmount(e.target.value);
-                                  // Calculate maximum USDC that can be borrowed based on MNT collateral
-                                  if (e.target.value && Number(userStats.mntPrice) > 0) {
-                                    const mntAmount = Number(e.target.value);
-                                    const mntPrice = Number(userStats.mntPrice);
-                                    // 150% collateralization ratio means max borrow = (collateral * price) / 1.5
-                                    const maxBorrow = (mntAmount * mntPrice) / 1.5;
-                                    setBorrowAmount(maxBorrow.toFixed(6));
-                                  } else {
-                                    setBorrowAmount('');
-                                  }
-                                }}
+                                onChange={(e) => setCollateralAmount(e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               />
-                              {borrowAmount && Number(userStats.mntPrice) > 0 && (
+                              {collateralAmount && Number(userStats.mntPrice) > 0 && (
                                 <div className="text-xs text-gray-500 mt-1 space-y-1">
-                                  <p>Based on MNT price: ${userStats.mntPrice}</p>
-                                  <p>Collateralization ratio: 150%</p>
-                                  {collateralAmount && (
-                                    <p>Collateral value: ${(Number(collateralAmount) * Number(userStats.mntPrice)).toFixed(2)}</p>
-                                  )}
+                                  <p>Collateral value: ${(Number(collateralAmount) * Number(userStats.mntPrice)).toFixed(2)}</p>
+                                  <p>Max borrow: {calculateMaxBorrow(collateralAmount)} USDC</p>
                                 </div>
                               )}
                             </div>

@@ -1,11 +1,9 @@
 'use client'
 
 import { MobileNav } from '../components/MobileNav'
-import { useAccount } from 'wagmi'
 import Link from 'next/link'
 
 export default function Home() {
-  const { isConnected } = useAccount()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">

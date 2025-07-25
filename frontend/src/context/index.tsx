@@ -3,7 +3,7 @@
 import { wagmiAdapter, projectId } from '@/config/wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createAppKit } from '@reown/appkit/react'
-import { mantle, mantleTestnet, mantleSepoliaTestnet } from '@reown/appkit/networks'
+import { mantleSepoliaTestnet } from '@reown/appkit/networks'
 import React, { type ReactNode } from 'react'
 import { cookieToInitialState, WagmiProvider, type Config } from 'wagmi'
 
@@ -23,10 +23,11 @@ const metadata = {
 }
 
 // Create the modal
-const modal = createAppKit({
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _modal = createAppKit({
   adapters: [wagmiAdapter],
   projectId,
-  networks: [mantle, mantleTestnet, mantleSepoliaTestnet],
+  networks: [mantleSepoliaTestnet],
   defaultNetwork: mantleSepoliaTestnet,
   metadata: metadata,
   features: {
