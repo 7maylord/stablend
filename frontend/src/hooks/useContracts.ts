@@ -148,7 +148,7 @@ const calculateMaxBorrow = (collateralAmountMnt: string): string => {
 };
 
 // Fixed frontend validation before contract call
-const _validateBorrowInputs = (borrowAmount: string, collateralAmount: string): string | null => {
+const validateBorrowInputs = (borrowAmount: string, collateralAmount: string): string | null => {
   // Check if user already has an active loan
   if (Number(loan.amount) > 0) {
     return 'You already have an active loan. Please repay your current loan first.';
@@ -183,7 +183,7 @@ const _validateBorrowInputs = (borrowAmount: string, collateralAmount: string): 
     }
   }
 
-  return null; // No validation errors
+  return null; 
 };
 
   // Helper function to estimate gas with buffer
@@ -391,20 +391,26 @@ const _validateBorrowInputs = (borrowAmount: string, collateralAmount: string): 
     }
   };
 
-  // Handle borrow
   const handleBorrow = async () => {
     if (!address || !borrowAmount || !collateralAmount) {
       showErrorToast('Please connect wallet and enter amounts');
       return;
     }
-
+  
+    // Use the validation function HERE
+    const validationError = validateBorrowInputs(borrowAmount, collateralAmount);
+    if (validationError) {
+      showErrorToast(validationError);
+      return;
+    }
+  
     try {
       setIsLoading(true);
       showInfoToast('Borrowing...');
-
+  
       const borrowAmountParsed = parseUnits(borrowAmount, 6);
       const collateralAmountParsed = parseUnits(collateralAmount, 18);
-
+  
       // Console log all input values for debugging
       console.log('=== BORROW TRANSACTION DEBUG ===');
       console.log('User inputs:');
@@ -422,46 +428,21 @@ const _validateBorrowInputs = (borrowAmount: string, collateralAmount: string): 
       console.log('- LENDING_MARKET_ADDRESS:', LENDING_MARKET_ADDRESS);
       console.log('- MNT_ADDRESS:', MNT_ADDRESS);
       
-      // Calculate what the contract will calculate
-      const mntPriceIn8Decimals = BigInt(Math.floor(Number(userStats.mntPrice) * 1e8));
-      const collateralValue = (collateralAmountParsed * mntPriceIn8Decimals) / BigInt(1e8);
-      const requiredCollateral = ((borrowAmountParsed * BigInt(10 ** 12)) * BigInt(150)) / BigInt(100);
+      // Calculate what the contract will calculate (using FIXED calculation)
+      const mntPriceUsd = parseUnits(userStats.mntPrice, 8);
+      const collateralValueUsd18 = (collateralAmountParsed * mntPriceUsd) / BigInt(1e8);
+      const borrowAmountUsd18 = borrowAmountParsed * BigInt(10 ** 12);
+      const requiredCollateralUsd18 = (borrowAmountUsd18 * BigInt(150)) / BigInt(100);
       
-      console.log('Contract calculation simulation:');
-      console.log('- MNT price in 8 decimals:', mntPriceIn8Decimals.toString());
-      console.log('- Collateral value (18 decimals):', collateralValue.toString());
-      console.log('- Required collateral (18 decimals):', requiredCollateral.toString());
-      console.log('- Collateral sufficient:', collateralValue >= requiredCollateral);
+      console.log('Contract calculation simulation (FIXED):');
+      console.log('- MNT price USD (8 decimals):', mntPriceUsd.toString());
+      console.log('- Collateral value USD (18 decimals):', collateralValueUsd18.toString());
+      console.log('- Borrow amount USD (18 decimals):', borrowAmountUsd18.toString());
+      console.log('- Required collateral USD (18 decimals):', requiredCollateralUsd18.toString());
+      console.log('- Collateral sufficient:', collateralValueUsd18 >= requiredCollateralUsd18);
       console.log('================================');
-
-      // Frontend validation: Check if user already has an active loan
-      if (Number(loan.amount) > 0) {
-        showErrorToast('You already have an active loan. Please repay your current loan first.');
-        setIsLoading(false);
-        return;
-      }
-
-      // Frontend validation: Check if amounts are valid
-      if (Number(borrowAmount) <= 0 || Number(collateralAmount) <= 0) {
-        showErrorToast('Please enter valid amounts greater than 0');
-        setIsLoading(false);
-        return;
-      }
-
-      // Frontend validation: Check collateralization ratio before calling contract
-      if (Number(userStats.mntPrice) > 0) {
-        const mntPrice = BigInt(Math.floor(Number(userStats.mntPrice) * 1e8)); // Convert to 8 decimals
-        const collateralValue = (collateralAmountParsed * mntPrice) / BigInt(1e8); // 18 decimals
-        const requiredCollateral = ((borrowAmountParsed * BigInt(10 ** 12)) * BigInt(150)) / BigInt(100); // 150% ratio, 18 decimals
-
-        if (collateralValue < requiredCollateral) {
-          const requiredMnt = formatUnits(requiredCollateral / mntPrice * BigInt(1e8), 18);
-          showErrorToast(`Insufficient collateral. You need at least ${requiredMnt} MNT for this borrow amount.`);
-          setIsLoading(false);
-          return;
-        }
-      }
-
+  
+        
       // Approve MNT spending with proper gas estimation
       const approveCall = {
         address: MNT_ADDRESS as `0x${string}`,
@@ -470,7 +451,7 @@ const _validateBorrowInputs = (borrowAmount: string, collateralAmount: string): 
         args: [LENDING_MARKET_ADDRESS, collateralAmountParsed],
         account: address
       };
-
+  
       console.log('=== APPROVE TRANSACTION ===');
       console.log('Approve call:', approveCall);
       
@@ -482,9 +463,9 @@ const _validateBorrowInputs = (borrowAmount: string, collateralAmount: string): 
         gas: approveGas
       });
       console.log('Approve transaction hash:', approveHash);
-
+  
       await directPublicClient.waitForTransactionReceipt({ hash: approveHash });
-
+  
       // Borrow with proper gas estimation
       const borrowCall = {
         address: LENDING_MARKET_ADDRESS as `0x${string}`,
@@ -493,27 +474,26 @@ const _validateBorrowInputs = (borrowAmount: string, collateralAmount: string): 
         args: [borrowAmountParsed, collateralAmountParsed],
         account: address
       };
-
+  
       console.log('=== BORROW TRANSACTION ===');
       console.log('Borrow call:', borrowCall);
       
       const borrowGas = await estimateGasWithBuffer(borrowCall);
       console.log('Borrow gas estimate:', borrowGas.toString());
-
+  
       const borrowHash = await directWalletClient.writeContract({
         ...borrowCall,
         gas: borrowGas
       });
       console.log('Borrow transaction hash:', borrowHash);
-
+  
       await directPublicClient.waitForTransactionReceipt({ hash: borrowHash });
-
+  
       // Refresh data
       await fetchUserData(false);
       setBorrowAmount('');
       setCollateralAmount('');
       showSuccessToast('Borrow successful!');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       console.error('=== BORROW ERROR ===');
       console.error('Error object:', err);
@@ -539,6 +519,8 @@ const _validateBorrowInputs = (borrowAmount: string, collateralAmount: string): 
         errorMessage = 'Gas limit too low - please try again';
       } else if (err.message?.includes('out of gas')) {
         errorMessage = 'Transaction ran out of gas - try with a smaller amount';
+      } else if (err.message?.includes('underflow') || err.message?.includes('overflow')) {
+        errorMessage = 'Arithmetic error - please check your amounts and try again';
       }
       
       showErrorToast(errorMessage);
@@ -547,6 +529,7 @@ const _validateBorrowInputs = (borrowAmount: string, collateralAmount: string): 
     }
   };
 
+  
   // Handle repay
   const handleRepay = async () => {
     if (!address || !repayAmount) {
