@@ -1,8 +1,6 @@
 import { ethers, Contract, Wallet, JsonRpcProvider } from "ethers";
 import * as dotenv from "dotenv";
 import { fetchMarketData } from "./fetchMarketData";
-
-// Import RateAdjuster ABI and type definitions
 import RateAdjusterABI from '../abi/RateAdjuster.json';
 
 dotenv.config();

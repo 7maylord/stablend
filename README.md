@@ -13,11 +13,11 @@ A decentralized lending platform built on Mantle Network with AI-powered dynamic
 
 ### Prerequisites
 
-- Node.js 18+
-- Yarn (package manager)
+- Node.js 20.11.0 or later
+- Yarn 1.22.22 or later (package manager)
 - Foundry (for smart contracts)
-- Python 3.8+ (for AI components)
-- Git
+- Python 3.10+ (for AI components)
+- Git LFS (for model storage)
 
 ### Installation
 
@@ -75,14 +75,21 @@ A decentralized lending platform built on Mantle Network with AI-powered dynamic
 1. **Start development server**
    ```bash
    cd frontend
-   yarn dev
+   yarn dev     # Uses Turbopack for faster development
    ```
 
 2. **Build for production**
    ```bash
-   yarn build
-   yarn start
+   yarn build   # Production build
+   yarn start   # Start production server
    ```
+
+The frontend uses Next.js 15.4.1 with the following key features:
+- Turbopack for fast development
+- React 18.2.0 for components
+- Wagmi 2.15.7 for Web3 interactions
+- TailwindCSS 4.1.11 for styling
+- TypeScript 5 for type safety
 
 ### Off-chain Scripts
 
@@ -107,15 +114,25 @@ A decentralized lending platform built on Mantle Network with AI-powered dynamic
 1. **Activate virtual environment**
    ```bash
    cd off-chain/ai
-   source venv/bin/activate
+   source venv/bin/activate   # On Windows: .\venv\Scripts\activate
    ```
 
-2. **Train the model**
+2. **Install dependencies**
    ```bash
-   python trainModel.py
+   pip install -r requirements.txt  # TensorFlow 2.19.0 and FastAPI 0.112.0
    ```
 
-3. **Deactivate when done**
+3. **Train the model**
+   ```bash
+   python trainModel.py   # Uses GPU if available
+   ```
+
+4. **Run the API server**
+   ```bash
+   uvicorn app:app --host 0.0.0.0 --port 8000
+   ```
+
+5. **Deactivate when done**
    ```bash
    deactivate
    ```
@@ -159,19 +176,26 @@ stablend/
 
 Copy `env.example` to `.env` and configure:
 
-- `MANTLE_SEPOLIA_RPC`: Mantle Sepolia RPC URL
+- `MANTLE_SEPOLIA_RPC`: Mantle Sepolia RPC URL (e.g., from Alchemy)
 - `PRIVATE_KEY`: Your private key for contract interactions
-- `MOCK_USDC_ADDRESS`: Deployed mock USDC contract
-- `MOCK_MNT_ADDRESS`: Deployed mock MNT contract
-- `LENDING_MARKET_ADDRESS`: Deployed lending market contract
-- `RATE_ADJUSTER_ADDRESS`: Deployed rate adjuster contract
-- `CREDIT_SCORE_ADDRESS`: Deployed credit score contract
+- `MOCK_USDC_ADDRESS`: `0x72adE6a1780220074Fd19870210706AbCb7589BF`
+- `MOCK_MNT_ADDRESS`: `0x46415f21F1cCd97dfBecccD5dad3948daB8674A2`
+- `LENDING_MARKET_ADDRESS`: `0xABc85233e3c1475c8B0943A13A5DB7b1f77ED6a7`
+- `RATE_ADJUSTER_ADDRESS`: `0xb5497CB80F237435797e6B7Be4245b5Dae25703e`
+- `CREDIT_SCORE_ADDRESS`: `0xda4B11A190A8B30e367080651e905c0B5D3Ab8C6`
+- `CHAINLINK_MNT_USD_FEED`: `0x4c8962833Db7206fd45671e9DC806e4FcC0dCB78`
+- `AI_API_ENDPOINT`: URL of your deployed AI model server
 
 ### Network Configuration
 
-The platform is configured for Mantle Network:
+The platform is deployed on Mantle Network:
 - **Testnet**: Mantle Sepolia (Chain ID: 5003)
+  - RPC URL: https://mantle-sepolia.g.alchemy.com/v2/[YOUR-API-KEY]
+  - Explorer: https://explorer.sepolia.mantle.xyz
+  - Gas Token: MNT
+  - Gas Price: ~0.02 gwei
 - **Mainnet**: Mantle (Chain ID: 5000)
+  - Coming soon
 
 ### Python Environment
 

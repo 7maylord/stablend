@@ -12,7 +12,7 @@ All contracts have been successfully deployed to Mantle Sepolia testnet (Chain I
 | **MockMNT** | `0x46415f21F1cCd97dfBecccD5dad3948daB8674A2` |
 | **CreditScore** | `0xda4B11A190A8B30e367080651e905c0B5D3Ab8C6` |
 | **RateAdjuster** | `0xb5497CB80F237435797e6B7Be4245b5Dae25703e` |
-| **LendingMarket** | `0x40Cd0edd7dAe6Ec3e7C8e6614b165EBC025aF443` |
+| **LendingMarket** | `0xABc85233e3c1475c8B0943A13A5DB7b1f77ED6a7` |
 | **Chainlink MNT/USD Feed** | `0x4c8962833Db7206fd45671e9DC806e4FcC0dCB78` |
 
 ### Deployment Details

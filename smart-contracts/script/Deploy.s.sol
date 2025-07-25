@@ -23,7 +23,7 @@ contract DeployScript is Script {
         MockMNT mockMNT = new MockMNT();
         console.log("MockMNT deployed at:", address(mockMNT));
 
-        // Get real Chainlink feed address from environment or use mock for local development
+        
         address chainlinkFeed = vm.envOr("CHAINLINK_MNT_USD_FEED", address(0));
         
         if (chainlinkFeed == address(0)) {
