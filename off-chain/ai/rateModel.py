@@ -3,8 +3,38 @@ import sys
 import tensorflow as tf
 import numpy as np
 
-# Load pre-trained TensorFlow model
-model = tf.keras.models.load_model('rate_model.h5')
+def create_model():
+    inputs = tf.keras.Input(shape=(3,))
+    x = tf.keras.layers.Dense(64, activation='relu')(inputs)
+    x = tf.keras.layers.Dense(32, activation='relu')(x)
+    outputs = tf.keras.layers.Dense(1)(x)
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    
+    model.compile(
+        optimizer='adam',
+        loss=tf.keras.losses.MeanSquaredError(),
+        metrics=[tf.keras.metrics.MeanSquaredError()]
+    )
+    return model
+
+print("Loading rate prediction model...")
+try:
+    # Try to load the existing model
+    model = tf.keras.models.load_model('rate_model.h5')
+    print("Successfully loaded existing trained model!")
+    
+    # Recompile the model with the correct metrics
+    model.compile(
+        optimizer='adam',
+        loss=tf.keras.losses.MeanSquaredError(),
+        metrics=[tf.keras.metrics.MeanSquaredError()]
+    )
+except Exception as e:
+    print(f"Could not load existing model: {str(e)}")
+    print("Creating new model...")
+    model = create_model()
+    # Save the model in the new format
+    model.save('rate_model.keras')  # Using newer .keras format
 
 def predict_rate(market_data):
     """
