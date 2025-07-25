@@ -4,7 +4,7 @@ import tensorflow as tf
 import numpy as np
 
 # Load pre-trained TensorFlow model
-model = tf.keras.models.load_model('offchain/ai/rate_model.h5')
+model = tf.keras.models.load_model('rate_model.h5')
 
 def predict_rate(market_data):
     """

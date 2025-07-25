@@ -1,16 +1,15 @@
-```python
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict
-from handler import predict_rate
+from rateModel import predict_rate
 
 app = FastAPI(title="Stablend AI API", description="AI-powered rate prediction for Stablend lending protocol")
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for hackathon; restrict in production
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
@@ -50,4 +49,3 @@ async def predict(data: MarketData):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
-```
