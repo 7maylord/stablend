@@ -63,8 +63,7 @@ export default function Dashboard() {
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={() => {
-                      fetchUserData();
-                      showInfoToast('Refreshing your data... 🔄');
+                      fetchUserData(true);
                     }}
                     disabled={isLoading}
                     className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
@@ -184,6 +183,20 @@ export default function Dashboard() {
                   <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                     <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              <div className="card card-hover-effect">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Market Utilization</p>
+                    <p className="text-2xl font-bold text-gray-900">{userStats.utilization}%</p>
+                  </div>
+                  <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                    <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
                   </div>
                 </div>
@@ -440,21 +453,67 @@ export default function Dashboard() {
                           </div>
                         </div>
 
-                        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                              <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        <div className="bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 border-2 border-purple-300 rounded-2xl p-6 shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 backdrop-blur-sm">
+                          <div className="flex items-start space-x-4">
+                            <div className="w-14 h-14 bg-gradient-to-br from-purple-500 via-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg transform rotate-3 hover:rotate-0 transition-transform duration-300">
+                              <svg className="w-7 h-7 text-white drop-shadow-sm" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                             </div>
-                            <div>
-                              <h4 className="font-semibold text-yellow-800">Borrowing Requirements</h4>
-                              <ul className="text-yellow-700 text-sm mt-2 space-y-1">
-                                <li>• 150% collateralization ratio</li>
-                                <li>• MNT price: ${userStats.mntPrice}</li>
-                                <li>• Credit score: {userStats.creditScore}</li>
-                                <li>• Interest rate: {userStats.rate}%</li>
-                              </ul>
+                            <div className="flex-1">
+                              <h4 className="font-bold text-purple-900 text-xl mb-5 drop-shadow-sm">📋 Borrowing Requirements</h4>
+                              <div className="grid grid-cols-1 gap-4">
+                                <div className="flex items-center justify-between p-4 bg-white/80 backdrop-blur-sm rounded-xl border-2 border-purple-200 shadow-sm hover:shadow-md transition-all duration-200">
+                                  <div className="flex items-center space-x-3">
+                                    <div className="w-3 h-3 bg-gradient-to-r from-purple-400 to-pink-500 rounded-full shadow-sm"></div>
+                                    <span className="text-sm font-semibold text-purple-800">Collateralization Ratio</span>
+                                  </div>
+                                  <span className="text-sm font-bold text-purple-900 bg-purple-100 px-3 py-1 rounded-full">150%</span>
+                                </div>
+                                
+                                <div className="flex items-center justify-between p-4 bg-white/80 backdrop-blur-sm rounded-xl border-2 border-blue-200 shadow-sm hover:shadow-md transition-all duration-200">
+                                  <div className="flex items-center space-x-3">
+                                    <div className="w-3 h-3 bg-gradient-to-r from-blue-400 to-indigo-500 rounded-full shadow-sm"></div>
+                                    <span className="text-sm font-semibold text-blue-800">MNT Price</span>
+                                  </div>
+                                  <span className="text-sm font-bold text-blue-900 bg-blue-100 px-3 py-1 rounded-full">${userStats.mntPrice}</span>
+                                </div>
+                                
+                                <div className="flex items-center justify-between p-4 bg-white/80 backdrop-blur-sm rounded-xl border-2 border-indigo-200 shadow-sm hover:shadow-md transition-all duration-200">
+                                  <div className="flex items-center space-x-3">
+                                    <div className="w-3 h-3 bg-gradient-to-r from-indigo-400 to-purple-500 rounded-full shadow-sm"></div>
+                                    <span className="text-sm font-semibold text-indigo-800">Credit Score</span>
+                                  </div>
+                                  <span className="text-sm font-bold text-indigo-900 bg-indigo-100 px-3 py-1 rounded-full">{userStats.creditScore}</span>
+                                </div>
+                                
+                                <div className="flex items-center justify-between p-4 bg-white/80 backdrop-blur-sm rounded-xl border-2 border-purple-200 shadow-sm hover:shadow-md transition-all duration-200">
+                                  <div className="flex items-center space-x-3">
+                                    <div className="w-3 h-3 bg-gradient-to-r from-purple-400 to-pink-500 rounded-full shadow-sm"></div>
+                                    <span className="text-sm font-semibold text-purple-800">Interest Rate</span>
+                                  </div>
+                                  <span className="text-sm font-bold text-purple-900 bg-purple-100 px-3 py-1 rounded-full">{userStats.rate}%</span>
+                                </div>
+                                
+                                <div className="flex items-center justify-between p-4 bg-white/80 backdrop-blur-sm rounded-xl border-2 border-blue-200 shadow-sm hover:shadow-md transition-all duration-200">
+                                  <div className="flex items-center space-x-3">
+                                    <div className="w-3 h-3 bg-gradient-to-r from-blue-400 to-indigo-500 rounded-full shadow-sm"></div>
+                                    <span className="text-sm font-semibold text-blue-800">Market Utilization</span>
+                                  </div>
+                                  <span className="text-sm font-bold text-blue-900 bg-blue-100 px-3 py-1 rounded-full">{userStats.utilization}%</span>
+                                </div>
+                              </div>
+                              
+                              <div className="mt-5 p-4 bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-xl shadow-sm">
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
+                                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                  </div>
+                                  <span className="text-sm text-purple-800 font-semibold">💡 Pro Tip: Higher credit scores unlock better interest rates!</span>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>

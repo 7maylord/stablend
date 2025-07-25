@@ -110,7 +110,19 @@ contract LendingMarket is ReentrancyGuard, Ownable {
         require(block.timestamp - updatedAt < 3600, "Stale price"); // 1 hour staleness
 
         // Calculate collateral value (price is in 8 decimals, convert to 18 decimals for calculation)
-        uint256 collateralValue = (collateral * uint256(price)) / 1e8;
+        // Use safe math to prevent overflow: multiply in steps
+        uint256 collateralValue;
+        if (uint256(price) > 0) {
+            // First multiply collateral by price, then divide by 1e8
+            // This prevents overflow by doing the division first if needed
+            if (uint256(price) >= 1e8) {
+                collateralValue = (collateral * (uint256(price) / 1e8));
+            } else {
+                collateralValue = (collateral * uint256(price)) / 1e8;
+            }
+        } else {
+            collateralValue = 0;
+        }
         // Scale the borrow amount (6 decimals) up to 18 decimals for the comparison.
         uint256 requiredCollateral = ((amount * 10 ** 12) * COLLATERAL_RATIO) / 100;
 
@@ -179,7 +191,16 @@ contract LendingMarket is ReentrancyGuard, Ownable {
         require(price > 0, "Invalid price");
         require(block.timestamp - updatedAt < 3600, "Stale price");
 
-        uint256 collateralValue = (loan.collateral * uint256(price)) / 1e8;
+        uint256 collateralValue;
+        if (uint256(price) > 0) {
+            if (uint256(price) >= 1e8) {
+                collateralValue = (loan.collateral * (uint256(price) / 1e8));
+            } else {
+                collateralValue = (loan.collateral * uint256(price)) / 1e8;
+            }
+        } else {
+            collateralValue = 0;
+        }
         uint256 totalDebt = loan.amount + loan.interestAccrued;
         // Scale totalDebt (6 decimals) up to 18 decimals for comparison
         uint256 requiredCollateral = ((totalDebt * 10 ** 12) * LIQUIDATION_THRESHOLD) / 100;
@@ -247,7 +268,16 @@ contract LendingMarket is ReentrancyGuard, Ownable {
             totalCollateralToLiquidate = loan.collateral;
 
             // Recalculate debt to repay based on available collateral
-            uint256 collateralValue = (totalCollateralToLiquidate * uint256(price)) / 1e8;
+            uint256 collateralValue;
+            if (uint256(price) > 0) {
+                if (uint256(price) >= 1e8) {
+                    collateralValue = (totalCollateralToLiquidate * (uint256(price) / 1e8));
+                } else {
+                    collateralValue = (totalCollateralToLiquidate * uint256(price)) / 1e8;
+                }
+            } else {
+                collateralValue = 0;
+            }
             // Account for penalty: liquidator pays less debt but gets penalty bonus
             uint256 debtToCover = (collateralValue * 100) / (100 + LIQUIDATION_PENALTY);
             maxLiquidatableDebt = debtToCover / 10 ** 12; // Scale back to 6 decimals

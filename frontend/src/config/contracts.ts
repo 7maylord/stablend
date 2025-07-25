@@ -36,4 +36,5 @@ export interface UserStats {
   creditScore: string;
   rate: string;
   mntPrice: string;
+  utilization: string;
 } 

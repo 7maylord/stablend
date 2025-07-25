@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAccount } from 'wagmi';
 import { createPublicClient, createWalletClient, http, custom } from 'viem';
 import { 
@@ -77,7 +77,8 @@ export function useContracts() {
     balance: '0',
     creditScore: '0',
     rate: '0',
-    mntPrice: '0'
+    mntPrice: '0',
+    utilization: '0'
   });
 
   const [loan, setLoan] = useState<LoanData>({
@@ -88,6 +89,8 @@ export function useContracts() {
   });
 
   const [isLoading, setIsLoading] = useState(false);
+  const isFetchingRef = useRef(false);
+  const hasInitialFetchRef = useRef(false);
 
   // Helper function to calculate required collateral for a given borrow amount
   const calculateRequiredCollateral = (borrowAmountUsdc: string): string => {
@@ -129,22 +132,36 @@ export function useContracts() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const estimateGasWithBuffer = async (contractCall: any) => {
     try {
+      console.log('Estimating gas for:', contractCall.functionName);
       const gasEstimate = await directPublicClient.estimateContractGas(contractCall);
+      console.log('Raw gas estimate:', gasEstimate.toString());
+      
       // Add 20% buffer to gas estimate
-      return gasEstimate + (gasEstimate * BigInt(20)) / BigInt(100);
+      const gasWithBuffer = gasEstimate + (gasEstimate * BigInt(20)) / BigInt(100);
+      console.log('Gas with 20% buffer:', gasWithBuffer.toString());
+      
+      return gasWithBuffer;
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
+      console.error('Gas estimation failed for', contractCall.functionName, ':', error);
+      console.log('Using fallback gas limit: 200,000,000');
       return BigInt(200000000); 
     }
   };
 
   // Fetch user data from contracts
-  const fetchUserData = useCallback(async () => {
+  const fetchUserData = useCallback(async (showToast = false) => {
     if (!address) return;
+    
+    // Prevent multiple simultaneous calls
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
 
     try {
       setIsLoading(true);
-      showInfoToast('Fetching user data...');
+      if (showToast) {
+        showInfoToast('Refreshing your data... 🔄');
+      }
 
       // Fetch lender balance
       const balance = await directPublicClient.readContract({
@@ -178,6 +195,14 @@ export function useContracts() {
         args: [address]
       });
 
+      // Fetch market utilization rate
+      const utilizationRate = await directPublicClient.readContract({
+        address: LENDING_MARKET_ADDRESS as `0x${string}`,
+        abi: lendingMarketAbi,
+        functionName: 'getUtilizationRate',
+        args: []
+      });
+
       // Fetch MNT price from Chainlink
       const priceData = await directPublicClient.readContract({
         address: CHAINLINK_MNT_USD_FEED as `0x${string}`,
@@ -206,7 +231,8 @@ export function useContracts() {
         creditScore: (creditScore as bigint).toString(),
         rate: ((userRate as bigint) / BigInt(100)).toString(),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        mntPrice: formatUnits((priceData as any)[1] as bigint, 8)
+        mntPrice: formatUnits((priceData as any)[1] as bigint, 8),
+        utilization: ((utilizationRate as bigint) / BigInt(100)).toString()
       });
 
       setLoan({
@@ -225,6 +251,7 @@ export function useContracts() {
       showErrorToast('Failed to fetch user data');
     } finally {
       setIsLoading(false);
+      isFetchingRef.current = false;
     }
   }, [address, directPublicClient, formatUnits, setUserStats, setLoan, showInfoToast, showErrorToast]);
 
@@ -284,7 +311,7 @@ export function useContracts() {
       await directPublicClient.waitForTransactionReceipt({ hash: depositHash });
 
       // Refresh data
-      await fetchUserData();
+      await fetchUserData(false);
       setDepositAmount('');
       showSuccessToast('Deposit successful!');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -319,6 +346,35 @@ export function useContracts() {
 
       const borrowAmountParsed = parseUnits(borrowAmount, 6);
       const collateralAmountParsed = parseUnits(collateralAmount, 18);
+
+      // Console log all input values for debugging
+      console.log('=== BORROW TRANSACTION DEBUG ===');
+      console.log('User inputs:');
+      console.log('- borrowAmount (string):', borrowAmount);
+      console.log('- collateralAmount (string):', collateralAmount);
+      console.log('- address:', address);
+      console.log('Parsed values:');
+      console.log('- borrowAmountParsed (bigint):', borrowAmountParsed.toString());
+      console.log('- collateralAmountParsed (bigint):', collateralAmountParsed.toString());
+      console.log('Current user stats:');
+      console.log('- userStats.mntPrice:', userStats.mntPrice);
+      console.log('- userStats.balance:', userStats.balance);
+      console.log('- loan.amount:', loan.amount);
+      console.log('Contract addresses:');
+      console.log('- LENDING_MARKET_ADDRESS:', LENDING_MARKET_ADDRESS);
+      console.log('- MNT_ADDRESS:', MNT_ADDRESS);
+      
+      // Calculate what the contract will calculate
+      const mntPriceIn8Decimals = BigInt(Math.floor(Number(userStats.mntPrice) * 1e8));
+      const collateralValue = (collateralAmountParsed * mntPriceIn8Decimals) / BigInt(1e8);
+      const requiredCollateral = ((borrowAmountParsed * BigInt(10 ** 12)) * BigInt(150)) / BigInt(100);
+      
+      console.log('Contract calculation simulation:');
+      console.log('- MNT price in 8 decimals:', mntPriceIn8Decimals.toString());
+      console.log('- Collateral value (18 decimals):', collateralValue.toString());
+      console.log('- Required collateral (18 decimals):', requiredCollateral.toString());
+      console.log('- Collateral sufficient:', collateralValue >= requiredCollateral);
+      console.log('================================');
 
       // Frontend validation: Check if user already has an active loan
       if (Number(loan.amount) > 0) {
@@ -357,12 +413,17 @@ export function useContracts() {
         account: address
       };
 
+      console.log('=== APPROVE TRANSACTION ===');
+      console.log('Approve call:', approveCall);
+      
       const approveGas = await estimateGasWithBuffer(approveCall);
+      console.log('Approved gas estimate:', approveGas.toString());
       
       const approveHash = await directWalletClient.writeContract({
         ...approveCall,
         gas: approveGas
       });
+      console.log('Approve transaction hash:', approveHash);
 
       await directPublicClient.waitForTransactionReceipt({ hash: approveHash });
 
@@ -375,25 +436,37 @@ export function useContracts() {
         account: address
       };
 
-      const borrowGas = await estimateGasWithBuffer(borrowCall);
+      console.log('=== BORROW TRANSACTION ===');
+      console.log('Borrow call:', borrowCall);
       
-      console.log('Estimated gas for borrow:', borrowGas.toString());
+      const borrowGas = await estimateGasWithBuffer(borrowCall);
+      console.log('Borrow gas estimate:', borrowGas.toString());
 
       const borrowHash = await directWalletClient.writeContract({
         ...borrowCall,
         gas: borrowGas
       });
+      console.log('Borrow transaction hash:', borrowHash);
 
       await directPublicClient.waitForTransactionReceipt({ hash: borrowHash });
 
       // Refresh data
-      await fetchUserData();
+      await fetchUserData(false);
       setBorrowAmount('');
       setCollateralAmount('');
       showSuccessToast('Borrow successful!');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
-      console.error('Borrow error:', err);
+      console.error('=== BORROW ERROR ===');
+      console.error('Error object:', err);
+      console.error('Error message:', err.message);
+      console.error('Error code:', err.code);
+      console.error('Error details:', err.details);
+      console.error('Error data:', err.data);
+      console.error('Error reason:', err.reason);
+      console.error('Full error stack:', err.stack);
+      console.error('=====================');
+      
       let errorMessage = 'Borrow failed';
       
       if (err.message?.includes('insufficient')) {
@@ -406,6 +479,8 @@ export function useContracts() {
         errorMessage = 'Transaction rejected by user';
       } else if (err.message?.includes('intrinsic gas too low')) {
         errorMessage = 'Gas limit too low - please try again';
+      } else if (err.message?.includes('out of gas')) {
+        errorMessage = 'Transaction ran out of gas - try with a smaller amount';
       }
       
       showErrorToast(errorMessage);
@@ -497,7 +572,7 @@ export function useContracts() {
       await directPublicClient.waitForTransactionReceipt({ hash: repayHash });
 
       // Refresh data
-      await fetchUserData();
+      await fetchUserData(false);
       setRepayAmount('');
       showSuccessToast('Repay successful!');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -563,7 +638,7 @@ export function useContracts() {
       await directPublicClient.waitForTransactionReceipt({ hash: withdrawHash });
 
       // Refresh data
-      await fetchUserData();
+      await fetchUserData(false);
       setWithdrawAmount('');
       showSuccessToast('Withdraw successful!');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -587,10 +662,15 @@ export function useContracts() {
 
   // Auto-fetch data when wallet connects
   useEffect(() => {
-    if (isConnected && address) {
-      fetchUserData();
+    if (isConnected && address && !isFetchingRef.current && !hasInitialFetchRef.current) {
+      hasInitialFetchRef.current = true;
+      fetchUserData(false);
+    } else if (!isConnected) {
+      // Reset flags when wallet disconnects
+      hasInitialFetchRef.current = false;
+      isFetchingRef.current = false;
     }
-  }, [isConnected, address, fetchUserData]);
+  }, [isConnected, address]);
 
   return {
     // State
