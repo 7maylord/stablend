@@ -70,6 +70,7 @@ export function useContracts() {
   const [borrowAmount, setBorrowAmount] = useState('');
   const [collateralAmount, setCollateralAmount] = useState('');
   const [repayAmount, setRepayAmount] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
 
   // State for user data
   const [userStats, setUserStats] = useState<UserStats>({
@@ -518,6 +519,72 @@ export function useContracts() {
     }
   };
 
+  // Handle withdraw
+  const handleWithdraw = async () => {
+    if (!address || !withdrawAmount) {
+      showErrorToast('Please connect wallet and enter amount');
+      return;
+    }
+
+    // Frontend validation: Check if amount is valid
+    if (Number(withdrawAmount) <= 0) {
+      showErrorToast('Please enter a valid amount greater than 0');
+      return;
+    }
+
+    // Frontend validation: Check if user has enough balance to withdraw
+    if (Number(withdrawAmount) > Number(userStats.balance)) {
+      showErrorToast('Insufficient balance to withdraw');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      showInfoToast('Withdrawing...');
+
+      const amount = parseUnits(withdrawAmount, 6);
+
+      // Withdraw from lending market
+      const withdrawCall = {
+        address: LENDING_MARKET_ADDRESS as `0x${string}`,
+        abi: lendingMarketAbi,
+        functionName: 'withdraw',
+        args: [amount],
+        account: address
+      };
+
+      const withdrawGas = await estimateGasWithBuffer(withdrawCall);
+
+      const withdrawHash = await directWalletClient.writeContract({
+        ...withdrawCall,
+        gas: withdrawGas
+      });
+
+      await directPublicClient.waitForTransactionReceipt({ hash: withdrawHash });
+
+      // Refresh data
+      await fetchUserData();
+      setWithdrawAmount('');
+      showSuccessToast('Withdraw successful!');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
+      console.error('Withdraw error:', err);
+      let errorMessage = 'Withdraw failed';
+      
+      if (err.message?.includes('insufficient')) {
+        errorMessage = 'Insufficient balance to withdraw';
+      } else if (err.message?.includes('gas')) {
+        errorMessage = 'Gas estimation failed or insufficient gas';
+      } else if (err.message?.includes('rejected')) {
+        errorMessage = 'Transaction rejected by user';
+      }
+      
+      showErrorToast(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Auto-fetch data when wallet connects
   useEffect(() => {
     if (isConnected && address) {
@@ -535,6 +602,8 @@ export function useContracts() {
     setCollateralAmount,
     repayAmount,
     setRepayAmount,
+    withdrawAmount,
+    setWithdrawAmount,
     userStats,
     loan,
     isLoading,
@@ -544,6 +613,7 @@ export function useContracts() {
     // Functions
     fetchUserData,
     handleDeposit,
+    handleWithdraw,
     handleBorrow,
     handleRepay,
     calculateRequiredCollateral,

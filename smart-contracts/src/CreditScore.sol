@@ -24,7 +24,7 @@ contract CreditScore is Ownable {
     }
 
     function calculateScore(uint256 transactionCount) internal pure returns (uint256) {
-        // Simplified: Higher transactions = better score
+        // Higher transactions = better score
         if (transactionCount >= 100) return 900;
         if (transactionCount >= 50) return 700;
         if (transactionCount >= 10) return 500;

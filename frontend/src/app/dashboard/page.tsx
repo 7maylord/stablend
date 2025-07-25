@@ -18,6 +18,8 @@ export default function Dashboard() {
   const {
     depositAmount,
     setDepositAmount,
+    withdrawAmount,
+    setWithdrawAmount,
     borrowAmount,
     setBorrowAmount,
     collateralAmount,
@@ -28,6 +30,7 @@ export default function Dashboard() {
     loan,
     isLoading,
     handleDeposit,
+    handleWithdraw,
     handleBorrow,
     handleRepay,
     fetchUserData,
@@ -243,6 +246,13 @@ export default function Dashboard() {
                         </div>
                         
                         <div className="space-y-4">
+                          {/* Current Balance Display */}
+                          <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                            <p className="text-sm text-gray-600">Your Balance</p>
+                            <p className="text-lg font-semibold text-gray-900">{userStats.balance} USDC</p>
+                          </div>
+                          
+                          {/* Deposit Section */}
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                               Amount to Deposit
@@ -262,6 +272,29 @@ export default function Dashboard() {
                           >
                             {isLoading ? 'Processing...' : 'Deposit USDC'}
                           </button>
+                          
+                          {/* Withdraw Section */}
+                          <div className="border-t border-gray-200 pt-4 mt-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Amount to Withdraw
+                              </label>
+                              <input
+                                type="number"
+                                placeholder="0.00"
+                                value={withdrawAmount}
+                                onChange={(e) => setWithdrawAmount(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                            </div>
+                            <button 
+                              onClick={handleWithdraw}
+                              disabled={isLoading || !withdrawAmount || Number(withdrawAmount) > Number(userStats.balance)}
+                              className="w-full mt-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {isLoading ? 'Processing...' : 'Withdraw USDC'}
+                            </button>
+                          </div>
                         </div>
                       </div>
 
