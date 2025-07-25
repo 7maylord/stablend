@@ -16,9 +16,11 @@ export default function Home() {
             {/* Logo */}
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <h1 className="text-2xl font-bold text-gradient">
-                  Stablend
-                </h1>
+                <Link href="/" className="cursor-pointer">
+                  <h1 className="text-2xl font-bold text-gradient hover:opacity-80 transition-opacity">
+                    Stablend
+                  </h1>
+                </Link>
               </div>
             </div>
 
@@ -176,7 +178,7 @@ export default function Home() {
               </div>
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Connect Wallet</h3>
               <p className="text-gray-600">
-                Connect your wallet using Reown or any supported wallet to access the platform.
+                Connect your wallet using any evm compatible wallet to access the platform.
               </p>
             </div>
 
