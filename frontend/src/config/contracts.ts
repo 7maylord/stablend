@@ -4,7 +4,7 @@ import creditScoreAbi from '../abi/CreditScoreAbi.json';
 import erc20Abi from '../abi/ERC20Abi.json';
 
 // Contract addresses
-export const LENDING_MARKET_ADDRESS = '0x40Cd0edd7dAe6Ec3e7C8e6614b165EBC025aF443';
+export const LENDING_MARKET_ADDRESS = '0xABc85233e3c1475c8B0943A13A5DB7b1f77ED6a7';
 export const RATE_ADJUSTER_ADDRESS = '0xb5497CB80F237435797e6B7Be4245b5Dae25703e';
 export const CREDIT_SCORE_ADDRESS = '0xda4B11A190A8B30e367080651e905c0B5D3Ab8C6';
 export const USDC_ADDRESS = '0x72adE6a1780220074Fd19870210706AbCb7589BF';

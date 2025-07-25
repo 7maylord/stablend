@@ -98,57 +98,63 @@ contract LendingMarket is ReentrancyGuard, Ownable {
 
     // Borrow USDC with MNT collateral
     function borrow(uint256 amount, uint256 collateral) external nonReentrant updateInterest(msg.sender) {
-        require(amount > 0 && collateral > 0, "Invalid amounts");
-        require(!loans[msg.sender].isActive, "Active loan exists");
+    require(amount > 0 && collateral > 0, "Invalid amounts");
+    require(!loans[msg.sender].isActive, "Active loan exists");
 
-        // Check if there's enough liquidity
-        require(totalDeposits >= totalBorrows + amount, "Insufficient liquidity");
+    // Check if there's enough liquidity
+    require(totalDeposits >= totalBorrows + amount, "Insufficient liquidity");
 
-        // Get current MNT price from Chainlink
-        (, int256 price,,, uint256 updatedAt) = chainlinkFeed.latestRoundData();
-        require(price > 0, "Invalid price");
-        require(block.timestamp - updatedAt < 3600, "Stale price"); // 1 hour staleness
+    // Get current MNT price from Chainlink
+    (, int256 price,,, uint256 updatedAt) = chainlinkFeed.latestRoundData();
+    require(price > 0, "Invalid price");
+    require(block.timestamp - updatedAt < 3600, "Stale price"); // 1 hour staleness
 
-        // Calculate collateral value (price is in 8 decimals, convert to 18 decimals for calculation)
-        // Use safe math to prevent overflow: multiply in steps
-        uint256 collateralValue;
-        if (uint256(price) > 0) {
-            // First multiply collateral by price, then divide by 1e8
-            // This prevents overflow by doing the division first if needed
-            if (uint256(price) >= 1e8) {
-                collateralValue = (collateral * (uint256(price) / 1e8));
-            } else {
-                collateralValue = (collateral * uint256(price)) / 1e8;
-            }
-        } else {
-            collateralValue = 0;
-        }
-        // Scale the borrow amount (6 decimals) up to 18 decimals for the comparison.
-        uint256 requiredCollateral = ((amount * 10 ** 12) * COLLATERAL_RATIO) / 100;
+    // Convert price to uint256 for calculations
+    uint256 mntPriceUsd = uint256(price); // Price in 8 decimals (e.g., $1.50 = 150000000)
 
-        require(collateralValue >= requiredCollateral, "Insufficient collateral");
+    // Calculate collateral value safely
+    // collateral is in 18 decimals, price is in 8 decimals
+    // We want result in 18 decimals to match USDC scaled up
+    uint256 collateralValueUsd18; // Will be in 18 decimal USD
+    
+    // Use OpenZeppelin's SafeMath-like approach or check for overflow
+    // collateral (18 decimals) * price (8 decimals) / 1e8 = USD value (18 decimals)
+    
+    // First check if multiplication would overflow
+    require(collateral <= type(uint256).max / mntPriceUsd, "Collateral value overflow");
+    
+    // Safe calculation: (collateral * price) / 1e8
+    // This gives us USD value in 18 decimals
+    collateralValueUsd18 = (collateral * mntPriceUsd) / 1e8;
 
-        // Create loan
-        loans[msg.sender] = Loan({
-            amount: amount,
-            collateral: collateral,
-            interestAccrued: 0,
-            startTime: block.timestamp,
-            rate: rateAdjuster.getUserRate(msg.sender),
-            lastAccrualTime: block.timestamp,
-            isActive: true
-        });
+    // Calculate required collateral value
+    // amount is in 6 decimals (USDC), scale to 18 decimals for comparison
+    // Then apply 150% collateralization ratio
+    uint256 borrowAmountUsd18 = amount * 1e12; // Scale 6 decimals to 18 decimals
+    uint256 requiredCollateralUsd18 = (borrowAmountUsd18 * COLLATERAL_RATIO) / 100;
 
-        userBorrows[msg.sender] = amount;
-        totalBorrows += amount;
+    require(collateralValueUsd18 >= requiredCollateralUsd18, "Insufficient collateral");
 
-        // Transfer tokens
-        require(usdc.transfer(msg.sender, amount), "USDC transfer failed");
-        require(collateralToken.transferFrom(msg.sender, address(this), collateral), "Collateral transfer failed");
+    // Create loan
+    loans[msg.sender] = Loan({
+        amount: amount,
+        collateral: collateral,
+        interestAccrued: 0,
+        startTime: block.timestamp,
+        rate: rateAdjuster.getUserRate(msg.sender),
+        lastAccrualTime: block.timestamp,
+        isActive: true
+    });
 
-        emit Borrow(msg.sender, amount, collateral);
-    }
+    userBorrows[msg.sender] = amount;
+    totalBorrows += amount;
 
+    // Transfer tokens
+    require(usdc.transfer(msg.sender, amount), "USDC transfer failed");
+    require(collateralToken.transferFrom(msg.sender, address(this), collateral), "Collateral transfer failed");
+
+    emit Borrow(msg.sender, amount, collateral);
+}
     // Repay loan
     function repay(uint256 amount) external nonReentrant updateInterest(msg.sender) {
         Loan storage loan = loans[msg.sender];
@@ -183,116 +189,108 @@ contract LendingMarket is ReentrancyGuard, Ownable {
 
     // Liquidate undercollateralized positions
     function liquidate(address user) external nonReentrant updateInterest(user) {
-        Loan storage loan = loans[user];
-        require(loan.isActive, "No active loan");
+    Loan storage loan = loans[user];
+    require(loan.isActive, "No active loan");
 
-        // Get current MNT price
-        (, int256 price,,, uint256 updatedAt) = chainlinkFeed.latestRoundData();
-        require(price > 0, "Invalid price");
-        require(block.timestamp - updatedAt < 3600, "Stale price");
+    // Get current MNT price
+    (, int256 price,,, uint256 updatedAt) = chainlinkFeed.latestRoundData();
+    require(price > 0, "Invalid price");
+    require(block.timestamp - updatedAt < 3600, "Stale price");
 
-        uint256 collateralValue;
-        if (uint256(price) > 0) {
-            if (uint256(price) >= 1e8) {
-                collateralValue = (loan.collateral * (uint256(price) / 1e8));
-            } else {
-                collateralValue = (loan.collateral * uint256(price)) / 1e8;
-            }
-        } else {
-            collateralValue = 0;
-        }
-        uint256 totalDebt = loan.amount + loan.interestAccrued;
-        // Scale totalDebt (6 decimals) up to 18 decimals for comparison
-        uint256 requiredCollateral = ((totalDebt * 10 ** 12) * LIQUIDATION_THRESHOLD) / 100;
+    uint256 mntPriceUsd = uint256(price); // 8 decimals
 
-        require(collateralValue < requiredCollateral, "Not undercollateralized");
+    // Calculate collateral value safely (same as borrow function)
+    require(loan.collateral <= type(uint256).max / mntPriceUsd, "Collateral value overflow");
+    uint256 collateralValueUsd18 = (loan.collateral * mntPriceUsd) / 1e8;
 
-        // Calculate liquidation amounts
-        LiquidationInfo memory liquidation = _calculateLiquidation(loan, uint256(price));
+    // Calculate total debt and required collateral for liquidation threshold
+    uint256 totalDebt = loan.amount + loan.interestAccrued;
+    uint256 totalDebtUsd18 = totalDebt * 1e12; // Scale to 18 decimals
+    uint256 requiredCollateralUsd18 = (totalDebtUsd18 * LIQUIDATION_THRESHOLD) / 100;
 
-        // Transfer debt repayment from liquidator
-        require(usdc.transferFrom(msg.sender, address(this), liquidation.debtToRepay), "Debt transfer failed");
-
-        // Transfer collateral to liquidator (includes penalty)
-        require(collateralToken.transfer(msg.sender, liquidation.collateralToLiquidate), "Collateral transfer failed");
-
-        // Update loan - reduce both debt and collateral
-        uint256 debtReduction = liquidation.debtToRepay;
-        loan.collateral -= liquidation.collateralToLiquidate;
-
-        if (debtReduction >= totalDebt) {
-            // Full liquidation
-            totalBorrows -= loan.amount;
-            userBorrows[user] = 0;
-
-            // Return any remaining collateral to user
-            if (loan.collateral > 0) {
-                require(collateralToken.transfer(user, loan.collateral), "Remaining collateral transfer failed");
-            }
-            delete loans[user];
-        } else {
-            // Partial liquidation
-            loan.amount = totalDebt - debtReduction;
-            loan.interestAccrued = 0;
-            loan.lastAccrualTime = block.timestamp;
-
-            totalBorrows -= debtReduction;
-            userBorrows[user] = loan.amount;
-        }
-
-        emit Liquidate(user, msg.sender, liquidation.collateralToLiquidate, liquidation.debtToRepay);
-    }
+    require(collateralValueUsd18 < requiredCollateralUsd18, "Not undercollateralized");
 
     // Calculate liquidation amounts
-    function _calculateLiquidation(Loan storage loan, uint256 price) internal view returns (LiquidationInfo memory) {
-        uint256 totalDebt = loan.amount + loan.interestAccrued;
+    LiquidationInfo memory liquidation = _calculateLiquidation(loan, mntPriceUsd);
 
-        // Calculate maximum liquidatable debt (e.g., 50% of total debt for partial liquidation)
-        // For full liquidation, this would be totalDebt
-        uint256 maxLiquidatableDebt = totalDebt / 2; // 50% max partial liquidation
-        if (maxLiquidatableDebt == 0) {
-            maxLiquidatableDebt = totalDebt; // If debt is small, liquidate all
+    // Transfer debt repayment from liquidator
+    require(usdc.transferFrom(msg.sender, address(this), liquidation.debtToRepay), "Debt transfer failed");
+
+    // Transfer collateral to liquidator (includes penalty)
+    require(collateralToken.transfer(msg.sender, liquidation.collateralToLiquidate), "Collateral transfer failed");
+
+    // Update loan - reduce both debt and collateral
+    uint256 debtReduction = liquidation.debtToRepay;
+    loan.collateral -= liquidation.collateralToLiquidate;
+
+    if (debtReduction >= totalDebt) {
+        // Full liquidation
+        totalBorrows -= loan.amount;
+        userBorrows[user] = 0;
+
+        // Return any remaining collateral to user
+        if (loan.collateral > 0) {
+            require(collateralToken.transfer(user, loan.collateral), "Remaining collateral transfer failed");
         }
+        delete loans[user];
+    } else {
+        // Partial liquidation
+        loan.amount = totalDebt - debtReduction;
+        loan.interestAccrued = 0;
+        loan.lastAccrualTime = block.timestamp;
 
-        // Calculate collateral needed to cover debt + penalty
-        // Scale debt from 6 decimals to 18 decimals for calculation
-        uint256 debtValue18Decimals = maxLiquidatableDebt * 10 ** 12;
-        uint256 collateralNeeded = debtValue18Decimals / uint256(price) * 1e8;
-
-        // Add liquidation penalty (liquidator gets extra collateral)
-        uint256 penaltyCollateral = (collateralNeeded * LIQUIDATION_PENALTY) / 100;
-        uint256 totalCollateralToLiquidate = collateralNeeded + penaltyCollateral;
-
-        // Don't liquidate more collateral than available
-        if (totalCollateralToLiquidate > loan.collateral) {
-            totalCollateralToLiquidate = loan.collateral;
-
-            // Recalculate debt to repay based on available collateral
-            uint256 collateralValue;
-            if (uint256(price) > 0) {
-                if (uint256(price) >= 1e8) {
-                    collateralValue = (totalCollateralToLiquidate * (uint256(price) / 1e8));
-                } else {
-                    collateralValue = (totalCollateralToLiquidate * uint256(price)) / 1e8;
-                }
-            } else {
-                collateralValue = 0;
-            }
-            // Account for penalty: liquidator pays less debt but gets penalty bonus
-            uint256 debtToCover = (collateralValue * 100) / (100 + LIQUIDATION_PENALTY);
-            maxLiquidatableDebt = debtToCover / 10 ** 12; // Scale back to 6 decimals
-
-            if (maxLiquidatableDebt > totalDebt) {
-                maxLiquidatableDebt = totalDebt;
-            }
-        }
-
-        return LiquidationInfo({
-            collateralToLiquidate: totalCollateralToLiquidate,
-            debtToRepay: maxLiquidatableDebt,
-            liquidatorReward: penaltyCollateral
-        });
+        totalBorrows -= debtReduction;
+        userBorrows[user] = loan.amount;
     }
+
+    emit Liquidate(user, msg.sender, liquidation.collateralToLiquidate, liquidation.debtToRepay);
+}
+
+// Fixed liquidation calculation helper
+function _calculateLiquidation(Loan storage loan, uint256 mntPriceUsd) internal view returns (LiquidationInfo memory) {
+    uint256 totalDebt = loan.amount + loan.interestAccrued;
+
+    // Calculate maximum liquidatable debt (50% for partial liquidation)
+    uint256 maxLiquidatableDebt = totalDebt / 2;
+    if (maxLiquidatableDebt == 0) {
+        maxLiquidatableDebt = totalDebt; // If debt is small, liquidate all
+    }
+
+    // Calculate collateral needed to cover debt
+    // Convert debt from 6 decimals to 18 decimals, then to MNT amount
+    uint256 debtValueUsd18 = maxLiquidatableDebt * 1e12;
+    
+    // Check for overflow before calculation
+    require(debtValueUsd18 <= type(uint256).max / 1e8, "Debt value overflow");
+    uint256 collateralNeeded = (debtValueUsd18 * 1e8) / mntPriceUsd;
+
+    // Add liquidation penalty (liquidator gets extra collateral)
+    uint256 penaltyCollateral = (collateralNeeded * LIQUIDATION_PENALTY) / 100;
+    uint256 totalCollateralToLiquidate = collateralNeeded + penaltyCollateral;
+
+    // Don't liquidate more collateral than available
+    if (totalCollateralToLiquidate > loan.collateral) {
+        totalCollateralToLiquidate = loan.collateral;
+
+        // Recalculate debt to repay based on available collateral
+        require(loan.collateral <= type(uint256).max / mntPriceUsd, "Available collateral overflow");
+        uint256 collateralValueUsd18 = (loan.collateral * mntPriceUsd) / 1e8;
+        
+        // Account for penalty: liquidator pays less debt but gets penalty bonus
+        uint256 debtToCoverUsd18 = (collateralValueUsd18 * 100) / (100 + LIQUIDATION_PENALTY);
+        maxLiquidatableDebt = debtToCoverUsd18 / 1e12; // Scale back to 6 decimals
+
+        if (maxLiquidatableDebt > totalDebt) {
+            maxLiquidatableDebt = totalDebt;
+        }
+    }
+
+    return LiquidationInfo({
+        collateralToLiquidate: totalCollateralToLiquidate,
+        debtToRepay: maxLiquidatableDebt,
+        liquidatorReward: penaltyCollateral
+    });
+}
 
     // Accrue interest for a user
     function _accrueInterest(address user) internal {

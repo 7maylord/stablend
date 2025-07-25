@@ -93,40 +93,98 @@ export function useContracts() {
   const hasInitialFetchRef = useRef(false);
 
   // Helper function to calculate required collateral for a given borrow amount
-  const calculateRequiredCollateral = (borrowAmountUsdc: string): string => {
-    if (!borrowAmountUsdc || Number(borrowAmountUsdc) <= 0 || Number(userStats.mntPrice) <= 0) {
-      return '0';
-    }
+const calculateRequiredCollateral = (borrowAmountUsdc: string): string => {
+  if (!borrowAmountUsdc || Number(borrowAmountUsdc) <= 0 || Number(userStats.mntPrice) <= 0) {
+    return '0';
+  }
 
+  try {
+    // Parse inputs
+    const borrowAmountParsed = parseUnits(borrowAmountUsdc, 6); // USDC has 6 decimals
+    const mntPriceUsd = parseUnits(userStats.mntPrice, 8); // Chainlink price has 8 decimals
+    
+    // Scale borrow amount to 18 decimals for calculation
+    const borrowAmountUsd18 = borrowAmountParsed * BigInt(10 ** 12);
+    
+    // Apply 150% collateralization ratio
+    const requiredCollateralUsd18 = (borrowAmountUsd18 * BigInt(150)) / BigInt(100);
+    
+    // Convert USD value back to MNT amount
+    // requiredCollateralUsd18 (18 decimals) / mntPriceUsd (8 decimals) * 1e8 = MNT amount (18 decimals)
+    const requiredMntAmount = (requiredCollateralUsd18 * BigInt(1e8)) / mntPriceUsd;
+    
+    return formatUnits(requiredMntAmount, 18);
+  } catch (error) {
+    console.error('Error calculating required collateral:', error);
+    return '0';
+  }
+};
+
+// Helper function to calculate max borrow for a given collateral amount
+const calculateMaxBorrow = (collateralAmountMnt: string): string => {
+  if (!collateralAmountMnt || Number(collateralAmountMnt) <= 0 || Number(userStats.mntPrice) <= 0) {
+    return '0';
+  }
+
+  try {
+    // Parse inputs
+    const mntAmount = parseUnits(collateralAmountMnt, 18); // MNT has 18 decimals
+    const mntPriceUsd = parseUnits(userStats.mntPrice, 8); // Chainlink price has 8 decimals
+    
+    // Calculate collateral value in USD (18 decimals)
+    const collateralValueUsd18 = (mntAmount * mntPriceUsd) / BigInt(1e8);
+    
+    // Apply inverse of 150% ratio (divide by 1.5) to get max borrow
+    const maxBorrowUsd18 = (collateralValueUsd18 * BigInt(100)) / BigInt(150);
+    
+    // Scale back to USDC decimals (6)
+    const maxBorrowUsdc = maxBorrowUsd18 / BigInt(10 ** 12);
+    
+    return formatUnits(maxBorrowUsdc, 6);
+  } catch (error) {
+    console.error('Error calculating max borrow:', error);
+    return '0';
+  }
+};
+
+// Fixed frontend validation before contract call
+const _validateBorrowInputs = (borrowAmount: string, collateralAmount: string): string | null => {
+  // Check if user already has an active loan
+  if (Number(loan.amount) > 0) {
+    return 'You already have an active loan. Please repay your current loan first.';
+  }
+
+  // Check if amounts are valid
+  if (Number(borrowAmount) <= 0 || Number(collateralAmount) <= 0) {
+    return 'Please enter valid amounts greater than 0';
+  }
+
+  // Check collateralization ratio
+  if (Number(userStats.mntPrice) > 0) {
     try {
-      const borrowAmountParsed = parseUnits(borrowAmountUsdc, 6);
-      const mntPrice = BigInt(Math.floor(Number(userStats.mntPrice) * 1e8));
-      const requiredCollateralValue = ((borrowAmountParsed * BigInt(10 ** 12)) * BigInt(150)) / BigInt(100);
-      const requiredMntAmount = (requiredCollateralValue * BigInt(1e8)) / mntPrice;
-      return formatUnits(requiredMntAmount, 18);
-    } catch (error) {
-      console.error('Error calculating required collateral:', error);
-      return '0';
-    }
-  };
+      const borrowAmountParsed = parseUnits(borrowAmount, 6);
+      const collateralAmountParsed = parseUnits(collateralAmount, 18);
+      const mntPriceUsd = parseUnits(userStats.mntPrice, 8);
+      
+      // Calculate collateral value in USD (18 decimals)
+      const collateralValueUsd18 = (collateralAmountParsed * mntPriceUsd) / BigInt(1e8);
+      
+      // Calculate required collateral (18 decimals)
+      const borrowAmountUsd18 = borrowAmountParsed * BigInt(10 ** 12);
+      const requiredCollateralUsd18 = (borrowAmountUsd18 * BigInt(150)) / BigInt(100);
 
-  // Helper function to calculate max borrow for a given collateral amount
-  const calculateMaxBorrow = (collateralAmountMnt: string): string => {
-    if (!collateralAmountMnt || Number(collateralAmountMnt) <= 0 || Number(userStats.mntPrice) <= 0) {
-      return '0';
-    }
-
-    try {
-      const mntAmount = parseUnits(collateralAmountMnt, 18);
-      const mntPrice = BigInt(Math.floor(Number(userStats.mntPrice) * 1e8));
-      const collateralValue = (mntAmount * mntPrice) / BigInt(1e8);
-      const maxBorrow = (collateralValue * BigInt(100)) / (BigInt(150) * BigInt(10 ** 12));
-      return formatUnits(maxBorrow, 6);
+      if (collateralValueUsd18 < requiredCollateralUsd18) {
+        const requiredMnt = formatUnits((requiredCollateralUsd18 * BigInt(1e8)) / mntPriceUsd, 18);
+        return `Insufficient collateral. You need at least ${Number(requiredMnt).toFixed(4)} MNT for this borrow amount.`;
+      }
     } catch (error) {
-      console.error('Error calculating max borrow:', error);
-      return '0';
+      console.error('Validation error:', error);
+      return 'Error validating inputs. Please check your amounts.';
     }
-  };
+  }
+
+  return null; // No validation errors
+};
 
   // Helper function to estimate gas with buffer
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
